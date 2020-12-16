@@ -1,0 +1,61 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library("SummarizedExperiment")
+library("dplyr")
+library("Matrix")
+
+load("data/dlpfc_polyA_brainseq_phase1_hg38_rseGene_merged_n732.rda")
+rg_md=as.data.frame(colData(rse_gene))
+rg_ft=as.data.frame(rowData(rse_gene))
+
+# load the largest file: junctions:
+load("data/dlpfc_polyA_brainseq_phase1_hg38_rseJxn_merged_n732.rda")
+rj_md=as.data.frame(colData(rse_jxn))
+rj_ft=as.data.frame(rowData(rse_jxn))
+
+load("data/dlpfc_polyA_brainseq_phase1_hg38_rseTx_merged_n732.rda")
+rt_md=as.data.frame(colData(rse_tx))
+rt_ft=as.data.frame(rowData(rse_tx))
+
+load("data/dlpfc_polyA_brainseq_phase1_hg38_rseExon_merged_n732.rda")
+re_md=as.data.frame(colData(rse_exon))
+re_ft=as.data.frame(rowData(rse_exon))
+
+```
+Optional chunk - play with various sparse matrices
+```{r}
+#--for object_size()
+library(pryr)
+
+ma<-assay(rse_jxn)
+m<-unname(ma) #remove row names
+
+object_size(ma)
+# 10.9 GB
+object_size(m)
+# 10.7 GB ## - wow, just the row names are ~ 200MB!
+
+object_size(as(m, "dgCMatrix"))
+# 2.83 GB
+
+library(DelayedArray)
+object_size(as(m, "RleMatrix"))
+# 4.94 GB  ## -- RLE not that good for this, even transposed: t(m)
+library(HDF5Array)
+object_size(as(m, "HDF5Matrix")) ## this will write the matrix to disk, compressed, so it takes a while
+## 2.3 kB
+mf<-as(m, "HDF5Matrix") #takes a long time
+
+showHDF5DumpLog() ##this will show where are the h5 temporary objects created above
+
+```
+
+
+
+
+
+```
