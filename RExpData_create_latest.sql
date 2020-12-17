@@ -17,13 +17,12 @@ CREATE INDEX idx_subj_dx ON subjects (Dx);
 -- Table: samples
 CREATE TABLE samples (
     id serial PRIMARY KEY,
-    Num integer NOT NULL,  
+    Num integer NOT NULL,  -- RNum/DNum
     Region varchar(30) NOT NULL,
     subj_id integer NOT NULL REFERENCES subjects (id),
-    cr_date date,
-    pr_date date,
-    exp_type varchar(30)  NOT NULL,
-    exp_id integer NOT NULL
+    s_date date,
+    exp_type varchar(30) NOT NULL, -- points to table
+    exp_id integer NOT NULL -- points to id in exp_type table
 );
 
 CREATE INDEX idx_samples_subj ON samples (subj_id);
@@ -46,9 +45,6 @@ CREATE TABLE feature_sets (
 CREATE TYPE geneClass AS 
  ENUM ('InGen', 'Unk');
 
-CREATE TYPE featureStatus AS
- ENUM ('KNOWN', 'NOVEL');
- 
 CREATE TABLE genes (
     id serial PRIMARY KEY,
     chr varchar(24)  NOT NULL,
@@ -61,23 +57,34 @@ CREATE TABLE genes (
     ensemblID varchar(24),
     havanaID varchar(24),
     gene_type varchar(42),
-    Symbol varchar(42),
+    Symbol varchar(24),
     EntrezID int,
     Class geneClass,
     transcripts integer[] -- transcripts (id)
 );
 
+CREATE INDEX idx_g_range on genes USING GIST (crange);
+CREATE INDEX idx_g_chr on genes (chr);
+CREATE INDEX idx_g_bin on genes (bin);
+CREATE INDEX idx_g_start on genes (cstart);
+CREATE INDEX idx_g_end on genes (cend);
 
 -- Table: transcripts
 
 CREATE TYPE txSource AS 
   ENUM ('HAVANA', 'ENSEMBL', 'REFSEQ', 'UCSC');
 
+CREATE TYPE featureStatus AS
+ ENUM ('KNOWN', 'NOVEL');
+
+--CREATE TYPE txType AS
+--  ENUM ('gene', 'transcript', 'exon', 'CDS', 'start_codon', 'stop_codon', 'UTR','Selenocysteine');
+
 CREATE TABLE transcripts (
     id serial PRIMARY KEY,
     ref_set smallint  NOT NULL,
     gene_id int  NOT NULL REFERENCES genes (id),
-    gencodeID varchar(24),
+    gencodeID varchar(24), -- transcript_id, ENS (Gencode)
     havanaID varchar(24), -- havana_transcript
     chr varchar(24)  NOT NULL,
     strand char(1),
@@ -86,24 +93,29 @@ CREATE TABLE transcripts (
     bin int,
     crange int4range,
     source txSource,
-    tx_type varchar(42),
-    tx_status featureStatus,
-    tx_level smallint,
-    tx_name varchar(24), --like gene Symbol but with a number added
+    tx_status featureStatus, -- gene_status in rowData(rse_tx)
+    tx_level smallint, -- ? not sure what this means
+    tx_name varchar(24), -- like gene Symbol but with a number added
     tx_support_level smallint,
-    tx_tag varchar(42),
-    tx_ont varchar(24),
+    tx_tag varchar(42), -- tag column
+    tx_ont varchar(24), -- ont column
     prot_id varchar(24),
     ccds_id varchar(24),
-    exons integer[],
-    jx integer[]
+    exons integer[], -- list of exons.id 
+    jx integer[] -- list of junctions.id
 );
+
+CREATE INDEX idx_t_range on transcripts USING GIST (crange);
+CREATE INDEX idx_t_chr on transcripts (chr);
+CREATE INDEX idx_t_bin on transcripts (bin);
+CREATE INDEX idx_t_start on transcripts (cstart);
+CREATE INDEX idx_t_end on transcripts (cend);
 
 -- Table: exons
 CREATE TABLE exons (
     id serial PRIMARY KEY,
     gene_id int,
-    chr varchar(24)  NOT NULL,
+    chr varchar(24) NOT NULL,
     strand char(1),
     cstart int  NOT NULL,
     cend int  NOT NULL,
@@ -112,8 +124,13 @@ CREATE TABLE exons (
     transcripts integer[] NOT NULL,
 );
 
-CREATE INDEX idx_exons_gid ON exons (gene_id);
-CREATE INDEX idx_exons_chr ON exons (chr);
+CREATE INDEX idx_e_gid on exons (gene_id);
+CREATE INDEX idx_e_range on exons USING GIST (crange);
+CREATE INDEX idx_e_chr on exons (chr);
+CREATE INDEX idx_e_bin on exons (bin);
+CREATE INDEX idx_e_start on exons (cstart);
+CREATE INDEX idx_e_end on exons (cend);
+
 
 -- Table: junctions
 
@@ -123,43 +140,49 @@ CREATE TYPE jxClass AS
 CREATE TABLE junctions (
     id serial PRIMARY KEY,
     gene_id int,
-    new_gene_id int,
+--    new_gene_id int, -- ?
     chr varchar(24) NOT NULL,
     strand char(1),
     cstart int  NOT NULL,
     cend int  NOT NULL,
     bin int,
     crange int4range,
+    inGencode boolean,
     inGencodeStart boolean,
     inGencodeEnd boolean,
-    transcripts integer[],
-    class jxClass,
+    transcripts integer[], -- list of transcripts.id
+    Class jxClass,
     isFusion boolean
 );
 
-CREATE INDEX idx_jx_range on junctions USING GIST (crange);
-CREATE INDEX idx_jx_chr on junctions (chr);
-CREATE INDEX idx_jx_bin on junctions (bin);
-CREATE INDEX idx_jx_start on junctions (cstart);
-CREATE INDEX idx_jx_start on junctions (cend);
+CREATE INDEX idx_j_range on junctions USING GIST (crange);
+CREATE INDEX idx_j_chr on junctions (chr);
+CREATE INDEX idx_j_bin on junctions (bin);
+CREATE INDEX idx_j_start on junctions (cstart);
+CREATE INDEX idx_j_end on junctions (cend);
 
--- Table: rnaseq_exp
+-- Table: rnaseq_exp RNA-Seq experimental data
+
+CREATE TYPE RnaSeqProtocol AS 
+ ENUM ('PolyA', 'RiboZeroGold', 'RiboZeroHMR');
+
 CREATE TABLE RNAseq_exp (
     id serial PRIMARY KEY,
-    grp varchar(12)  NOT NULL,
-    protocol varchar(12)  NOT NULL,
-    sample_id integer NOT NULL,
+    grp varchar(12) -- experiment group
+    pr_date date, -- processing date
+    protocol RnaSeqProtocol  NOT NULL, 
+    sample_id integer NOT NULL REFERENCES samples (id),
     RIN numeric(3,1)  NOT NULL,
-    seq_sample_ids varchar[]  NOT NULL,
-    trimmed boolean  NOT NULL,
+    seq_sample_ids varchar[]  NOT NULL, -- e.g. R2810_C00JVACXX,R2810_C0J1FACXX
+    trimmed boolean NOT NULL,
     gene_set_id int,
     gene_data real[],
     tx_set_id int,
     tx_data real[],
     exon_set_id int,
     exon_data real[],
-    jx_set_id int NOT NULL,
-    jx_data real[] NOT NULL,
+    jx_set_id int ,
+    jx_data real[],
     bamFile varchar  NOT NULL,
     numReads int NOT NULL,
     numMapped int NOT NULL,
@@ -173,9 +196,11 @@ CREATE TABLE RNAseq_exp (
     totalAssignedGene real
 );
 
+CREATE INDEX idx_rnaseqexp_smp on RNAseq_exp (sample_id);
+
 -- Table: rnaseq_exp_qc
-CREATE TABLE rnaseq_exp_qc (
-    rnaseq_exp_id int  NOT NULL,
+CREATE TABLE RNAseq_exp_qc (
+    exp_id int PRIMARY KEY REFERENCES RNAseq_exp (id),
     FQBasicStats varchar(12)  NOT NULL,
     perBaseQual varchar(12)[]  NOT NULL,
     perSeqQual varchar(12)  NOT NULL,
@@ -210,6 +235,5 @@ CREATE TABLE rnaseq_exp_qc (
     Adapter50_51_R2 real[]  NOT NULL,
     Adapter70_71_R2 real[]  NOT NULL,
     Adapter88_R2 real[]  NOT NULL,
-    CONSTRAINT PK_rnaseq_exp PRIMARY KEY (rnaseq_exp_id)
 );
 

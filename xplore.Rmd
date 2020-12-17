@@ -31,31 +31,32 @@ Optional chunk - play with various sparse matrices
 #--for object_size()
 library(pryr)
 
-ma<-assay(rse_jxn)
-m<-unname(ma) #remove row names
+#ma<-assay(rse_jxn)
+#m<-unname(ma) #remove row names
 
-object_size(ma)
+#object_size(ma)
 # 10.9 GB
-object_size(m)
+#object_size(m)
 # 10.7 GB ## - wow, just the row names are ~ 200MB!
 
-object_size(as(m, "dgCMatrix"))
+#object_size(as(m, "dgCMatrix"))
 # 2.83 GB
 
-library(DelayedArray)
-object_size(as(m, "RleMatrix"))
+#library(DelayedArray)
+#object_size(as(m, "RleMatrix"))
 # 4.94 GB  ## -- RLE not that good for this, even transposed: t(m)
-library(HDF5Array)
-object_size(as(m, "HDF5Matrix")) ## this will write the matrix to disk, compressed, so it takes a while
+#library(HDF5Array)
+#object_size(as(m, "HDF5Matrix")) ## this will write the matrix to disk, compressed, so it takes a while
 ## 2.3 kB
-mf<-as(m, "HDF5Matrix") #takes a long time
+#mf<-as(m, "HDF5Matrix") #takes a long time
 
-showHDF5DumpLog() ##this will show where are the h5 temporary objects created above
+#showHDF5DumpLog() ##this will show where are the h5 temporary objects created above
+
+```
+
+Explore the data
+```{r}
 
 ```
 
 
-
-
-
-```
