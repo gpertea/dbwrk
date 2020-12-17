@@ -54,9 +54,61 @@ library(pryr)
 
 ```
 
-Explore the data
+Connect to database
 ```{r}
+library('RPostgreSQL')
 
+dbp <- read.delim(".pgpass", sep=":", header=TRUE)
+pg_db <- "rse"
+pg_user <- subset(dbp, database=="rse")[[1,4]]
+pg_pass <- subset(dbp, database=="rse")[[1,5]]
+
+pg <- dbDriver("PostgreSQL")
+
+con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv")
+#show tables
+dbListTables(conn)
+```
+
+Loading the `subjects` table:
+
+```{r}
+#select columns of interest
+sd <- rg_md[ c("BrNum", "Age", "Sex", "Race", "Dx") ]
+#convert column names to lowercase
+colnames(sd) <- tolower(colnames(sd))
+#remove row names
+rownames(df) <- NULL
+#strip the Br prefix for brain numbers:
+sd$brnum <- gsub("Br", "", sd$brnum)
+#change the type to numeric
+sd$brnum <- as.numeric(sd$brnum)
+#append the data!
+dbWriteTable(con, name="subjects", value=sd, append=TRUE, row.names=FALSE)
+
+```
+Loading the `samples` table:
+
+```{r}
+# get the association between BrNum and subjects.id from the database
+sidmap <- dbGetQuery(con, "select concat('Br',cast(brnum as text)) as brnum, id as subj_id from subjects")
+#shuffle to test that mapping works OK
+sidmap <- sidmap[sample(nrow(sidmap)),]
+#select columns to insert in the samples table:
+samp <- rg_md[ c("BrNum", "RNum", "Region") ]
+sampr <- samp[match(sidmap$brnum, samp$BrNum),]
+#sampr now has the same row order as sidmap!
+sampr$subj_id <- sidmap$subj_id
+#prepare sampr.exp_id field for insertion, based on the last id in RNAseq_exp table
+
+```
+
+
+
+
+```{r}
+#disconnect from database
+dbDisconnect(con)
 ```
 
 

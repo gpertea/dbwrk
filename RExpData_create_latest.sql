@@ -168,7 +168,7 @@ CREATE TYPE RnaSeqProtocol AS
 
 CREATE TABLE RNAseq_exp (
     id serial PRIMARY KEY,
-    grp varchar(12) -- experiment group
+    grp varchar(12), -- experiment group
     pr_date date, -- processing date
     protocol RnaSeqProtocol  NOT NULL, 
     sample_id integer NOT NULL REFERENCES samples (id),
