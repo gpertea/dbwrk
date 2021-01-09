@@ -1,0 +1,61 @@
+---
+title: "rse_gene_all"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Setup libraries
+
+```{r}
+library("SummarizedExperiment")
+library("dplyr")
+```
+
+## load latest rse_gene object
+
+```{r}
+load("data/RNAseq_Collection_postQC_n5536_11dataset_2021-01-07_geneRSE.Rdata")
+g_cd <- as.data.frame(colData(rse_gene))
+g_rd <- as.data.frame(rowData(rse_gene))
+g_a <- assay(rse_gene)
+```
+
+
+### Connect to database
+
+```{r}
+library('RPostgreSQL')
+
+dbp <- read.delim(".pgpass", sep=":", header=TRUE)
+pg_db <- "rse"
+pg_user <- subset(dbp, database=="rse")[[1,4]]
+pg_pass <- subset(dbp, database=="rse")[[1,5]]
+
+pg <- dbDriver("PostgreSQL")
+
+con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv")
+#show tables
+dbListTables(con)
+```
+### Loading the `subjects` table from rse_gene:
+
+```{r}
+#select columns of interest
+sd <- g_cd[ c("BrNum", "Age", "Sex", "Race", "Dx") ]
+#convert column names to lowercase
+colnames(sd) <- tolower(colnames(sd))
+#remove row names
+rownames(sd) <- NULL
+## remove duplicate BrNum entries, keep only the last one in each group
+
+sdf <- sd[!duplicated(sd$brnum, fromLast=T),]
+
+#---
+#append the data!
+dbWriteTable(con, name="subjects", value=sdf, append=TRUE, row.names=FALSE)
+
+```
+
