@@ -55,7 +55,7 @@ CREATE TABLE datasets (
     info text
 );
 
-CREATE INDEX idx_datasets_name ON datasets (name);
+CREATE UNIQUE INDEX idx_datasets_name ON datasets (name);
 
 CREATE TYPE RnaSeqProtocol AS 
  ENUM ('PolyA', 'RiboZeroGold', 'RiboZeroHMR');
@@ -92,7 +92,7 @@ CREATE TABLE exp_RNASeq (
 
 CREATE INDEX idx_expRNASeq_sid on exp_RNASeq (s_id);
 CREATE INDEX idx_expRNASeq_rnum on exp_RNASeq (rnum);
-CREATE INDEX idx_rnaseqexp_smp on exp_RNASeq (sample_id);
+CREATE UNIQUE INDEX idx_rnaseqexp_smp on exp_RNASeq (sample_id);
 
 -- ======================================================== --
 

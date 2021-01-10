@@ -58,4 +58,51 @@ sdf <- sd[!duplicated(sd$brnum, fromLast=T),]
 dbWriteTable(con, name="subjects", value=sdf, append=TRUE, row.names=FALSE)
 
 ```
+### Loading the samples and exp_RNASeq tables
+```{r}
+## -- update datasets table
+dsfreq <- as.data.frame(table(g_cd$Dataset, dnn=c("name")))
+colnames(dsfreq) <- tolower(colnames(dsfreq))
+dbWriteTable(con, name="datasets_tmp", value=dsfreq, append=FALSE, row.names=FALSE, temporary=T)
+qry <- "INSERT into datasets (name)
+  SELECT t.name from datasets_tmp t where 
+    NOT EXISTS( SELECT * from datasets d where d.name = t.name )"
+dbGetQuery(con, qry)
+
+
+## now load the display and subjects tables to get the ids
+ds <- dbGetQuery(con, 'select * from datasets')
+subj <- dbGetQuery(con, 'select * from subjects')
+
+##
+smp <- g_cd[ c("BrNum", "Dataset", "SAMPLE_ID", "RNum", "RIN", "Region", 
+    "numReads", "numMapped","numUnmapped", "mitoMapped", "totalMapped",
+    "overallMapRate", "concordMapRate", "mitoRate", "rRNA_rate", "totalAssignedGene", "bamFile") ]
+colnames(smp) <- tolower(colnames(smp))
+#strip RNum and convert it to numeric
+smp$rnum <- substring(smp$rnum, 2)
+smp$rnum <- as.numeric(smp$rnum)
+
+## adding dataset_id from matching entries in ds:
+smp$dataset_id <- ds$id[ match(smp$dataset, ds$name) ]
+## adding subj_id
+smp$subj_id <- subj$id[ match(smp$brnum, subj$brnum) ]
+
+## load samples table through a temporary table
+#for simplicity, add a num column for the samples table
+smp$num <- smp$rnum
+
+## 
+dbWriteTable(con, name="samples_tmp", value=smp[c("num", "subj_id", "region")], append=FALSE, row.names=FALSE, temporary=T)
+
+dbGetQuery(con, "CREATE INDEX idx_samplestmp_num ON samples_tmp (num);")
+
+qry <- "INSERT into samples (num, subj_id, region)
+  SELECT num, subj_id, cast(region as varchar) from samples_tmp t where 
+    NOT EXISTS( SELECT * from samples s where s.num = t.num 
+                and s.subj_id = t.subj_id and text(s.region) = t.region)"
+
+dbGetQuery(con, qry)
+
+```
 

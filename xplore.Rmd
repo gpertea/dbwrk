@@ -95,7 +95,8 @@ Loading the `samples` table:
 ##shuffle to test that mapping works OK
 #sidmap <- sidmap[sample(nrow(sidmap)),]
 ##select columns to insert in the samples table:
-#samp <- rg_md[ c("BrNum", "RNum", "Region") ]
+smp <- rg_md[ c("BrNum", "RNum", "Region") ]
+colnames(smp) <- tolower(colnames(smp))
 #sampr <- samp[match(sidmap$brnum, samp$BrNum),]
 ##sampr now has the same row order as sidmap!
 #sampr$subj_id <- sidmap$subj_id
