@@ -64,7 +64,7 @@ CREATE TABLE exp_RNASeq (
     id serial PRIMARY KEY,
     s_id integer NOT NULL REFERENCES samples (id),
     rnum int,
-    sample_id varchar(64),  -- as seen in SAMPLE_ID column in RSE
+    sample_id varchar(240),  -- as seen in SAMPLE_ID column in RSE
     dataset_id smallint, -- experiment group / dataset / project
     protocol RnaSeqProtocol, 
     pr_date date, -- processing date
@@ -87,11 +87,13 @@ CREATE TABLE exp_RNASeq (
     mitoRate real  NOT NULL,
     rRNA_rate real  NOT NULL,
     totalAssignedGene real,
-    bamFile varchar
+    bamFile text
 );
 
 CREATE INDEX idx_expRNASeq_sid on exp_RNASeq (s_id);
 CREATE INDEX idx_expRNASeq_rnum on exp_RNASeq (rnum);
+CREATE INDEX idx_expRNASeq_did on exp_RNASeq (dataset_id);
+CREATE INDEX idx_expRNASeq_rin on exp_RNASeq (RIN);
 CREATE UNIQUE INDEX idx_rnaseqexp_smp on exp_RNASeq (sample_id);
 
 -- ======================================================== --
