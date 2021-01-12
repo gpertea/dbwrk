@@ -142,6 +142,5 @@ qry <- "INSERT into exp_rnaseq (s_id, rnum, sample_id, dataset_id, rin,
 dbGetQuery(con, qry)
 
 
-
 ```
 
