@@ -36,13 +36,13 @@ CREATE TYPE sampleRegion AS
 
 CREATE TABLE samples (
     id serial PRIMARY KEY, -- internal unique sample identifier
-    num integer,  -- RNum/DNum
+    name varchar(42) NOT NULL,  -- RNum/DNum/other alphanumeric sample ID in full 
     subj_id integer NOT NULL REFERENCES subjects (id),
     region sampleRegion NOT NULL,
     sdate date -- sample date?
 );
 
-CREATE INDEX idx_samples_num ON samples (num);
+CREATE UNIQUE INDEX idx_samples_num ON samples (name);
 CREATE INDEX idx_samples_subj ON samples (subj_id);
 CREATE INDEX idx_samples_region ON samples (region);
 
@@ -52,6 +52,8 @@ CREATE INDEX idx_samples_region ON samples (region);
 CREATE TABLE datasets (
     id serial PRIMARY KEY,
     name varchar(64),
+    public boolean,  -- data can be exposed to the public
+    restricted boolean, -- LIBD internally restricted
     info text
 );
 
@@ -61,37 +63,38 @@ CREATE TYPE RnaSeqProtocol AS
  ENUM ('PolyA', 'RiboZeroGold', 'RiboZeroHMR');
 
 CREATE TABLE exp_RNASeq (
-    id serial PRIMARY KEY,
-    s_id integer NOT NULL REFERENCES samples (id),
-    rnum int,
-    sample_id varchar(240),  -- as seen in SAMPLE_ID column in RSE
-    dataset_id smallint, -- experiment group / dataset / project
-    protocol RnaSeqProtocol, 
-    pr_date date, -- processing date
-    RIN numeric(3,1),
-    g_set_id int,
-    g_data real[],
-    t_set_id int,
-    t_data real[],
-    e_set_id int,
-    e_data real[],
-    j_set_id int , -- to feature_sets.id
-    j_data real[],
-    numReads int NOT NULL,
-    numMapped int NOT NULL,
-    numUnmapped int NOT NULL,
-    mitoMapped int  NOT NULL,
-    totalMapped int  NOT NULL,
-    overallMapRate real NOT NULL,
-    concordMapRate real NOT NULL,
-    mitoRate real  NOT NULL,
-    rRNA_rate real  NOT NULL,
-    totalAssignedGene real,
-    bamFile text
+     id serial PRIMARY KEY,
+     s_id integer NOT NULL REFERENCES samples (id),
+     s_name varchar(42), --redundancy check, references samples (name)
+     flags bit(8), -- single reads, qc_fail, non-public, internal restricted,...
+     sample_id varchar(240),  -- as seen in SAMPLE_ID column in RSE
+     dataset_id smallint, -- experiment group / dataset / project
+     protocol RnaSeqProtocol,
+     pr_date date, -- processing date
+     RIN numeric(3,1),
+     g_set_id int, -- feature_sets('g', id)
+     g_data real[],
+     t_set_id int, -- feature_sets('t', id)
+     t_data real[],
+     e_set_id int, -- feature_sets('e', id)
+     e_data real[],
+     j_set_id int, -- feature_sets('j', id)
+     j_data real[],
+     numReads int,
+     numMapped int,
+     numUnmapped int,
+     mitoMapped int,
+     totalMapped int,
+     overallMapRate real,
+     concordMapRate real,
+     mitoRate real,
+     rRNA_rate real,
+     totalAssignedGene real,
+     bamFile text
 );
 
 CREATE INDEX idx_expRNASeq_sid on exp_RNASeq (s_id);
-CREATE INDEX idx_expRNASeq_rnum on exp_RNASeq (rnum);
+CREATE INDEX idx_expRNASeq_sname on exp_RNASeq (s_name);
 CREATE INDEX idx_expRNASeq_did on exp_RNASeq (dataset_id);
 CREATE INDEX idx_expRNASeq_rin on exp_RNASeq (RIN);
 CREATE UNIQUE INDEX idx_rnaseqexp_smp on exp_RNASeq (sample_id);

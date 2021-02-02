@@ -74,16 +74,16 @@ dbGetQuery(con, qry)
 ds <- dbGetQuery(con, 'select * from datasets')
 subj <- dbGetQuery(con, 'select * from subjects')
 
-##
+## create a smp dataframe to load data from
 smp <- g_cd[ c("BrNum", "Dataset", "SAMPLE_ID", "RNum", "RIN", "Region", 
     "numReads", "numMapped","numUnmapped", "mitoMapped", "totalMapped",
     "overallMapRate", "concordMapRate", "mitoRate", "rRNA_rate", "totalAssignedGene", "bamFile") ]
 smp$bamfile <- sapply(smp[,"bamFile"], paste, collapse=';')
 smp$bamFile <- NULL
 colnames(smp) <- tolower(colnames(smp))
-#strip RNum and convert it to numeric
-smp$rnum <- substring(smp$rnum, 2)
-smp$rnum <- as.numeric(smp$rnum)
+##strip RNum and convert it to numeric? not anymore
+#smp$rnum <- substring(smp$rnum, 2)
+#smp$rnum <- as.numeric(smp$rnum)
 
 ## adding dataset_id from matching entries in ds:
 smp$dataset_id <- ds$id[ match(smp$dataset, ds$name) ]
@@ -91,49 +91,52 @@ smp$dataset_id <- ds$id[ match(smp$dataset, ds$name) ]
 smp$subj_id <- subj$id[ match(smp$brnum, subj$brnum) ]
 
 ## load samples table through a temporary table
-#for simplicity, add a num column for the samples table
-smp$num <- smp$rnum
+## rename rnum to "name" for the samples table
+colnames(smp) [colnames(smp) == "rnum"] <- "name"
 
 ## 
 ## remove duplicate BrNum entries, keep only the last one in each group
 
-dbWriteTable(con, name="samples_tmp", value=, append=FALSE, row.names=FALSE, temporary=T)
+dbWriteTable(con, name="samples_tmp", value=smp[c("name", "subj_id", "region")], 
+             append=FALSE, row.names=FALSE, temporary=T)
 
-dbGetQuery(con, "CREATE INDEX idx_samplestmp_num ON samples_tmp (num);")
+dbGetQuery(con, "CREATE INDEX idx_stmp_n ON samples_tmp (name);")
 
-qry <- "INSERT into samples (num, subj_id, region)
- SELECT DISTINCT t.num, t.subj_id, cast(t.region as sampleregion) from samples_tmp t where 
-   NOT EXISTS( SELECT * from samples s where s.num = t.num 
+qry <- "INSERT into samples (name, subj_id, region)
+ SELECT DISTINCT t.name, t.subj_id, cast(t.region as sampleregion) from samples_tmp t where 
+   NOT EXISTS( SELECT * from samples s where s.name = t.name 
                 and s.subj_id = t.subj_id and text(s.region) = t.region)"
 
 dbGetQuery(con, qry)
 
-## now load exp_RNASeq (metadata only, first)
+## now load exp_RNASeq (metadata only first)
+
+## rename "name" column to "s_name" for the exp_RNASeq table
+colnames(smp) [colnames(smp) == "name"] <- "s_name"
 
 samples=dbGetQuery(con,"select * from samples")
 
-smp$dsmp <- paste(smp$num, smp$subj_id, smp$region, sep="~")
+smp$dsmp <- paste(smp$name, smp$subj_id, smp$region, sep="~")
 
-samples$dsmp <- paste(samples$num, samples$subj_id, samples$region, sep="~")
+samples$dsmp <- paste(samples$name, samples$subj_id, samples$region, sep="~")
 
+# create a join s_id column by fetching the samples$id values when matching dsmp
 smp$s_id <- samples$id[ match(smp$dsmp, samples$dsmp) ]
 
-
-qry <- "CREATE TEMPORARY TABLE exp_r_tmp ( s_id int, rnum int, sample_id varchar(240), dataset_id smallint, 
+qry <- "CREATE TEMPORARY TABLE exp_r_tmp ( s_id int, s_name varchar(42), sample_id varchar(240), dataset_id smallint, 
    rin numeric(3,1), numreads int, nummapped int, numunmapped int, mitomapped int, totalmapped int, 
    overallmaprate real, concordmaprate real, mitorate real, rrna_rate real, totalassignedgene real, bamfile text )"
 
 dbGetQuery(con, qry)
 
-dbWriteTable(con, name="exp_r_tmp", value=smp[c("s_id", "rnum", "sample_id", "dataset_id", "rin", 
-    "numreads", "nummapped", "numunmapped", "mitomapped", "totalmapped",
-    "overallmaprate", "concordmaprate", "mitorate", "rrna_rate", "totalassignedgene", "bamfile")], 
-    append=TRUE, row.names=FALSE)
+dbWriteTable(con, name="exp_r_tmp", value=smp[c("s_id", "s_name", "sample_id", "dataset_id",
+    "rin", "numreads", "nummapped", "numunmapped", "mitomapped", "totalmapped",
+    "overallmaprate", "concordmaprate", "mitorate", "rrna_rate", "totalassignedgene",
+    "bamfile")], append=TRUE, row.names=FALSE)
 
-dbGetQuery(con, "CREATE INDEX idx_exprseqtmp_sid ON exp_r_tmp (sample_id)")
+dbGetQuery(con, "CREATE INDEX idx_rnaseqtmp_sid ON exp_r_tmp (sample_id)")
 
-
-qry <- "INSERT into exp_rnaseq (s_id, rnum, sample_id, dataset_id, rin, 
+qry <- "INSERT into exp_rnaseq (s_id, s_name, sample_id, dataset_id, rin, 
     numreads, nummapped, numunmapped, mitomapped, totalmapped,
     overallmaprate, concordmaprate, mitorate, rrna_rate, totalassignedgene, bamfile)
      SELECT * from exp_r_tmp t where 
