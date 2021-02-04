@@ -35,10 +35,15 @@ CREATE INDEX idx_subj_age ON subjects (age);
 CREATE TABLE regions (
  id smallserial PRIMARY KEY, 
  name varchar(42), -- common name/abbreviation to use
- info varchar(140) -- full name/description 
+ info varchar(140) -- full name/description
+ alts varchar[]  -- possible name alternative spelllings referring to the same region
 )
-
+ 
 CREATE UNIQUE INDEX idx_regions_n ON regions (name);
+CREATE INDEX idx_r_alts ON regions USING GIN(alts);
+-- how to test for an alternative spelling/names:
+--   SELECT id,name FROM regions WHERE name = 'HIPPO' OR alts @>(ARRAY['HIPPO']) 
+
 
 CREATE TABLE samples (
     id serial PRIMARY KEY, -- internal unique sample identifier
