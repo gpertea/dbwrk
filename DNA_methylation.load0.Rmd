@@ -1,0 +1,45 @@
+---
+title: "DNA_methylation.load0"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Setup libraries
+
+```{r}
+library("dplyr")
+```
+
+## load DNA methylation metadata as gathered by Nick
+
+```{r}
+## this is how we load an object by name 
+## load() returns the name of the object, get (objname) gets the object
+## assign("a", get("b")) is the same with: a <- b
+assign("dnam", get(load("brainstorm/libd_wgbs_pd.rda")) )
+## rename/adjust some columns and
+pd <- dnam
+
+```
+
+
+### Connect to database
+
+```{r}
+library('RPostgreSQL')
+
+dbp <- read.delim(".pgpass", sep=":", header=TRUE)
+pg_db <- "rse"
+pg_user <- subset(dbp, database=="rse")[[1,4]]
+pg_pass <- subset(dbp, database=="rse")[[1,5]]
+
+pg <- dbDriver("PostgreSQL")
+
+con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv")
+#show tables
+dbListTables(con)
+```
+

@@ -17,7 +17,6 @@ CREATE TABLE subjects (
     sex subjSex,
     race subjRace,
     dx subjDx,
-    age_death real,
     xdata text -- additional info if available
 );
 
@@ -29,22 +28,29 @@ CREATE INDEX idx_subj_age ON subjects (age);
 
 -- ======================================================== --
 
--- Table: samples
-CREATE TYPE sampleRegion AS
- ENUM ('Amygdala', 'BasoAmyg', 'Caudate', 'dACC', 'DentateGyrus', 'DLPFC', 
- 'Habenula', 'HIPPO', 'MedialAmyg', 'mPFC', 'NAc', 'sACC');
+--CREATE TYPE sampleRegion AS
+ --ENUM ('Amygdala', 'BasoAmyg', 'Caudate', 'dACC', 'DentateGyrus', 'DLPFC', 
+ --'Habenula', 'HIPPO', 'MedialAmyg', 'mPFC', 'NAc', 'sACC');
+
+CREATE TABLE regions (
+ id smallserial PRIMARY KEY, 
+ name varchar(42), -- common name/abbreviation to use
+ info varchar(140) -- full name/description 
+)
+
+CREATE UNIQUE INDEX idx_regions_n ON regions (name);
 
 CREATE TABLE samples (
     id serial PRIMARY KEY, -- internal unique sample identifier
     name varchar(42) NOT NULL,  -- RNum/DNum/other alphanumeric sample ID in full 
     subj_id integer NOT NULL REFERENCES subjects (id),
-    region sampleRegion NOT NULL,
+    r_id smallint, --REFERENCES regions.id; allow NULLs for now
     sdate date -- sample date?
 );
 
 CREATE UNIQUE INDEX idx_samples_num ON samples (name);
 CREATE INDEX idx_samples_subj ON samples (subj_id);
-CREATE INDEX idx_samples_region ON samples (region);
+CREATE INDEX idx_samples_r ON samples (r_id);
 
 -- Table: exp_RNASeq 
 -- RNA-Seq experimental data
