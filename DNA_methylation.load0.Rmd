@@ -13,8 +13,13 @@ knitr::opts_chunk$set(echo = TRUE)
 library("dplyr")
 ```
 
-## load DNA methylation metadata as gathered by Nick
+```{r}
+rg<-read.table('data/other/Kleinman_R01_PTSD_RNA_Samples_Demo_withFlowLane.csv', 
+                  header=T, sep=',')
+```
 
+
+## load DNA methylation metadata as gathered by Nick
 ```{r}
 ## this is how we load an object by name 
 ## load() returns the name of the object, get (objname) gets the object

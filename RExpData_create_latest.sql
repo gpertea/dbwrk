@@ -33,10 +33,11 @@ CREATE INDEX idx_subj_age ON subjects (age);
  --'Habenula', 'HIPPO', 'MedialAmyg', 'mPFC', 'NAc', 'sACC');
 
 CREATE TABLE regions (
- id smallserial PRIMARY KEY, 
- name varchar(42), -- common name/abbreviation to use
- info varchar(140), -- full name/description
- alts varchar[]  -- possible name alternative spelllings referring to the same region
+ id smallserial PRIMARY KEY,
+ name varchar(42), -- common abbreviation or name to use for display
+ fullname varchar(72), -- full name unless name is not an abbreviation
+ alts varchar[],  -- alternate spellings for this region
+ partof smallint --references id for subregions,e.g. dentate gyrus is part of hippocampus
 );
  
 CREATE UNIQUE INDEX idx_regions_n ON regions (name);

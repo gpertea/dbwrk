@@ -41,6 +41,19 @@ con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv
 #show tables
 dbListTables(con)
 ```
+##Regions table
+Only execute this once for loading initial data
+```{r}
+regtable <- read.table("brain_regions.csv", header=T, sep=',')
+dbWriteTable(con, name="regs_tmp", value=regtable, append=FALSE, row.names=FALSE, temporary=TRUE)
+qry <- "INSERT into regions (name, fullname, alts)
+SELECT t.name, t.fullname, string_to_array(lower(t.alts), '|')
+  FROM regs_tmp t WHERE not exists (SELECT * from regions r where r.name = t.name)"
+dbGetQuery(con, qry)
+dbGetQuery(con, "drop table regs_tmp")
+```
+
+
 ### Loading the `subjects` table from rse_gene:
 
 ```{r}
