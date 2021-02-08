@@ -69,43 +69,77 @@ sdf <- sd[!duplicated(sd$brnum, fromLast=T),]
 #---load in a temporary table so only new BrNums are appended
 
 dbWriteTable(con, name="subj_tmp", value=sdf, append=FALSE, row.names=FALSE, temporary=TRUE)
-dbGetQuery(con, "CREATE UNIQUE INDEX idx_subjtmp_n ON subj_tmp (BrNum)")
+r <- dbGetQuery(con, "CREATE UNIQUE INDEX idx_subjtmp_n ON subj_tmp (BrNum)")
 
 qry <- "INSERT into subjects (brnum, age, sex, race, dx)
  SELECT DISTINCT t.brnum, cast(t.age as real), cast(t.sex as subjsex),
             cast(t.race as subjrace), cast(t.dx as subjdx) from subj_tmp t 
             WHERE NOT EXISTS (SELECT * from subjects s where s.brnum = t.brnum)"
-dbGetQuery(con, qry)
+r <- dbGetQuery(con, qry)
 
-
+r <- dbGetQuery(con, "drop table subj_tmp")
+r <- dbGetQuery(con, "select count(*) from subjects")
+cat("Subjects loaded: ",r$count,"\n")
 ```
-### Loading the samples and exp_RNASeq tables
+
+### Loading the datasets table
 ```{r}
 ## -- update datasets table
 dsfreq <- as.data.frame(table(g_cd$Dataset, dnn=c("name")))
 colnames(dsfreq) <- tolower(colnames(dsfreq))
-dbWriteTable(con, name="datasets_tmp", value=dsfreq, append=FALSE,
+dbWriteTable(con, name="dsets_tmp", value=dsfreq, append=FALSE,
              row.names=FALSE, temporary=TRUE)
 qry <- "INSERT into datasets (name)
-  SELECT t.name from datasets_tmp t where 
+  SELECT t.name from dsets_tmp t where 
     NOT EXISTS( SELECT * from datasets d where d.name = t.name )"
-dbGetQuery(con, qry)
+r <- dbGetQuery(con, qry)
+v <- dbGetQuery(con, "drop table dsets_tmp")
+cat("Datasets added: ",nrow(r),"\n")
 ```
 
 ```{r}
-## now load the datasets and subjects tables to get the ids
+## load the datasets and subjects in dataframes to get the ids
 ds <- dbGetQuery(con, 'select * from datasets')
 subj <- dbGetQuery(con, 'select * from subjects')
+regs <- dbGetQuery(con, 'select * from regions')
 
 ## create a smp dataframe to load data from
 smp <- g_cd[ c("BrNum", "Dataset", "SAMPLE_ID", "RNum", "RIN", "Region", 
     "numReads", "numMapped","numUnmapped", "mitoMapped", "totalMapped",
     "overallMapRate", "concordMapRate", "mitoRate", "rRNA_rate", "totalAssignedGene", "bamFile") ]
-smp$bamfile <- sapply(smp[,"bamFile"], paste, collapse=';')
-smp$bamFile <- NULL
 colnames(smp) <- tolower(colnames(smp))
+## simplify sample_id so it has only the first lane suffix
+smp$sample_id <- sapply(smp$sample_id, function(x) {
+  mp <- regexpr(';',x, fixed=TRUE)
+  if (mp[[1]]==-1) return(x)
+  return(substr(x,1,m[[1]]-1))
+})
+
+nd <- sum( duplicated(smp$sample_id) )
+if (nd>0) 
+  stop("Error: duplicates found in sample_id after semicolon truncation")
+#smp$bamfile <- sapply(smp[,"bamFile"], paste, collapse=';')
+## simplify bamfile lists so the path is only kept once
+smp$bamfile <- sapply(smp$bamfile, function(x) {
+  if (length(x)==1) return(x)
+  mp <- regexpr('/[^\\/]+$',x, perl=TRUE)
+  if (mp[[1]]==-1) return(paste(x, collapse=','))
+  r <- sapply(regmatches(x,mp), substr, 2, nchar(x))
+  r[[1]] <- x[[1]]
+  return(paste(r, collapse=','))
+})
+
+## check if all regions are recognized and get their id:
+rdf <- data.frame("id"=as.numeric(0), "name"=unique(smp$region))
+
+dbGetQuery(con, "drop table reg_tmp")
+dbWriteTable(con, name="reg_tmp", value=rdf, 
+             append=FALSE, row.names=FALSE, temporary=T)
+##TODO: in postgresql populate IDs in reg_tmp by vocabulary analysis
+
+
 ##strip RNum and convert it to numeric? not anymore
-#smp$rnum <- substring(smp$rnum, 2)
+#smp$rnum <- substring(smp$rnum, 2, nchar(smp$rnum))
 #smp$rnum <- as.numeric(smp$rnum)
 
 ## adding dataset_id from matching entries in ds:
@@ -131,6 +165,8 @@ qry <- "INSERT into samples (name, subj_id, region)
                 and s.subj_id = t.subj_id and text(s.region) = t.region)"
 
 dbGetQuery(con, qry)
+
+dbGetQuery(con, "drop table samples_tmp")
 ```
 
 ```{r}

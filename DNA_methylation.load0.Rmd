@@ -13,12 +13,6 @@ knitr::opts_chunk$set(echo = TRUE)
 library("dplyr")
 ```
 
-```{r}
-rg<-read.table('data/other/Kleinman_R01_PTSD_RNA_Samples_Demo_withFlowLane.csv', 
-                  header=T, sep=',')
-```
-
-
 ## load DNA methylation metadata as gathered by Nick
 ```{r}
 ## this is how we load an object by name 
@@ -29,7 +23,6 @@ assign("dnam", get(load("brainstorm/libd_wgbs_pd.rda")) )
 pd <- dnam
 
 ```
-
 
 ### Connect to database
 

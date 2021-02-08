@@ -8,7 +8,11 @@ CREATE TYPE subjSex AS
  ENUM ('M','F', 'O');
 
 CREATE TYPE subjDx AS
- ENUM ('Control', 'Schizo', 'Bipolar', 'MDD', 'PTSD', 'Other');
+ ENUM ('Control', 'Schizo', 'Bipolar', 'MDD', 'PTSD', 'AD', 'BpNOS', 'Other');
+-- MDD = Major Depressive Disorder
+-- AD = Alzheimer's Dementia
+-- BpNOS = Bipolar Not Otherwise Specified
+
 
 CREATE TABLE subjects (
     id serial PRIMARY KEY, -- internal unique subject identifier
@@ -27,10 +31,6 @@ CREATE INDEX idx_subj_dx ON subjects (dx);
 CREATE INDEX idx_subj_age ON subjects (age);
 
 -- ======================================================== --
-
---CREATE TYPE sampleRegion AS
- --ENUM ('Amygdala', 'BasoAmyg', 'Caudate', 'dACC', 'DentateGyrus', 'DLPFC', 
- --'Habenula', 'HIPPO', 'MedialAmyg', 'mPFC', 'NAc', 'sACC');
 
 CREATE TABLE regions (
  id smallserial PRIMARY KEY,
@@ -76,10 +76,10 @@ CREATE TYPE RnaSeqProtocol AS
 
 CREATE TABLE exp_RNASeq (
      id serial PRIMARY KEY,
-     s_id integer NOT NULL REFERENCES samples (id),
+     s_id integer NOT NULL REFERENCES samples (id), -- tissue sample ID
      s_name varchar(42), --redundancy check, references samples (name)
+     sample_id varchar(240),  -- as in SAMPLE_ID column in RSE
      flags bit(8), -- single reads, qc_fail, non-public, internal restricted,...
-     sample_id varchar(240),  -- as seen in SAMPLE_ID column in RSE
      dataset_id smallint, -- experiment group / dataset / project
      protocol RnaSeqProtocol,
      pr_date date, -- processing date
@@ -189,7 +189,6 @@ CREATE TABLE genes (
 
 CREATE INDEX idx_g_range on genes USING GIST (crange);
 CREATE INDEX idx_g_id on genes (g_id);
-CREATE INDEX idx_g_ensid on genes (ensembleid);
 CREATE INDEX idx_g_chr on genes (chr);
 CREATE INDEX idx_g_bin on genes (bin);
 CREATE INDEX idx_g_start on genes (cstart);
@@ -270,7 +269,6 @@ CREATE TYPE jxClass AS
 CREATE TABLE junctions (
     id serial PRIMARY KEY,
     gene_id int,
---    new_gene_id int, -- ?
     chr varchar(24) NOT NULL,
     strand char(1),
     cstart int  NOT NULL,
