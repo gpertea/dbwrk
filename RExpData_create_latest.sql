@@ -45,7 +45,6 @@ CREATE INDEX idx_r_alts ON regions USING GIN(alts);
 -- how to test for an alternative spelling/names:
 --   SELECT id,name FROM regions WHERE name = 'HIPPO' OR alts @>(ARRAY['HIPPO']) 
 
-
 CREATE TABLE samples (
     id serial PRIMARY KEY, -- internal unique sample identifier
     name varchar(42) NOT NULL,  -- RNum/DNum/other alphanumeric sample ID in full 

@@ -24,7 +24,6 @@ g_rd <- as.data.frame(rowData(rse_gene))
 g_a <- assay(rse_gene)
 ```
 
-
 ### Connect to database
 
 ```{r}
@@ -42,7 +41,7 @@ con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv
 dbListTables(con)
 ```
 ##Regions table
-Only execute this once for loading initial data
+Only execute this once for loading initial region data (or when an updated regions file is provided)
 ```{r}
 regtable <- read.table("brain_regions.csv", header=T, sep=',')
 dbWriteTable(con, name="regs_tmp", value=regtable, append=FALSE, row.names=FALSE, temporary=TRUE)
@@ -101,7 +100,6 @@ cat("Datasets added: ",nrow(r),"\n")
 ## load the datasets and subjects in dataframes to get the ids
 ds <- dbGetQuery(con, 'select * from datasets')
 subj <- dbGetQuery(con, 'select * from subjects')
-regs <- dbGetQuery(con, 'select * from regions')
 
 ## create a smp dataframe to load data from
 smp <- g_cd[ c("BrNum", "Dataset", "SAMPLE_ID", "RNum", "RIN", "Region", 
@@ -129,18 +127,36 @@ smp$bamfile <- sapply(smp$bamfile, function(x) {
   return(paste(r, collapse=','))
 })
 
+
+##
+rtbl <- as.data.frame(table(smp[,c('region', 'dataset')]))
+rtbl <- subset(rtbl, Freq>0)
+rtbl <- rtbl[order(rtbl$region), ]
+
 ## check if all regions are recognized and get their id:
 rdf <- data.frame("id"=as.numeric(0), "name"=unique(smp$region))
 
 dbGetQuery(con, "drop table reg_tmp")
 dbWriteTable(con, name="reg_tmp", value=rdf, 
              append=FALSE, row.names=FALSE, temporary=T)
-##TODO: in postgresql populate IDs in reg_tmp by vocabulary analysis
 
+uqry <- "UPDATE reg_tmp t SET id=r.id FROM regions r 
+ WHERE lower(t.name) = lower(r.name) OR 
+   lower(t.name)=ANY(alts) OR r.fullname ILIKE t.name || '%'"
+
+r <- dbGetQuery(con, uqry)
+dbr <- dbGetQuery(con, "select name from reg_tmp where id=0")
+if (nrow(dbr)>0) 
+  stop("The <regions> table needs update, regions could not be identified: ",dbr)
+regs <- dbGetQuery(con, "select id, name from reg_tmp")
+dbGetQuery(con, "drop table reg_tmp")
 
 ##strip RNum and convert it to numeric? not anymore
 #smp$rnum <- substring(smp$rnum, 2, nchar(smp$rnum))
 #smp$rnum <- as.numeric(smp$rnum)
+
+## adding region id to samples:
+smp$r_id <- regs$id[ match(smp$region, regs$name)]
 
 ## adding dataset_id from matching entries in ds:
 smp$dataset_id <- ds$id[ match(smp$dataset, ds$name) ]
@@ -154,19 +170,18 @@ colnames(smp) [colnames(smp) == "rnum"] <- "name"
 ## 
 ## remove duplicate BrNum entries, keep only the last one in each group
 dbGetQuery(con, "drop table samples_tmp")
-dbWriteTable(con, name="samples_tmp", value=smp[c("name", "subj_id", "region")], 
+dbWriteTable(con, name="samples_tmp", value=smp[c("name", "subj_id", "r_id")], 
              append=FALSE, row.names=FALSE, temporary=T)
 
 dbGetQuery(con, "CREATE INDEX idx_stmp_n ON samples_tmp (name)")
 
-qry <- "INSERT into samples (name, subj_id, region)
- SELECT DISTINCT t.name, t.subj_id, cast(t.region as sampleregion) from samples_tmp t where 
-   NOT EXISTS( SELECT * from samples s where s.name = t.name 
-                and s.subj_id = t.subj_id and text(s.region) = t.region)"
+qry <- "INSERT into samples (name, subj_id, r_id)
+ SELECT DISTINCT t.name, t.subj_id, t.r_id from samples_tmp t where 
+   NOT EXISTS( SELECT * from samples s where s.name = t.name )"
 
-dbGetQuery(con, qry)
+r <- dbGetQuery(con, qry)
 
-dbGetQuery(con, "drop table samples_tmp")
+r <- dbGetQuery(con, "drop table samples_tmp")
 ```
 
 ```{r}
@@ -177,19 +192,15 @@ colnames(smp) [colnames(smp) == "name"] <- "s_name"
 
 samples=dbGetQuery(con,"select * from samples")
 
-smp$dsmp <- paste(smp$s_name, smp$subj_id, smp$region, sep="~")
-
-samples$dsmp <- paste(samples$name, samples$subj_id, samples$region, sep="~")
-
-# create a join s_id column by fetching the samples$id values when matching dsmp
-smp$s_id <- samples$id[ match(smp$dsmp, samples$dsmp) ]
+# create a join s_id column by fetching the samples$s_name with samples$name
+smp$s_id <- samples$id[ match(smp$s_name, samples$name) ]
 
 dbGetQuery(con, "drop table exp_r_tmp")
 
-qry <- "CREATE TEMPORARY TABLE exp_r_tmp ( s_id int, s_name varchar(42), flags bit(8), 
-   sample_id varchar(240), dataset_id smallint, rin numeric(3,1), numreads int, 
-   nummapped int, numunmapped int, mitomapped int, totalmapped int, overallmaprate real, 
-   concordmaprate real, mitorate real, rrna_rate real, totalassignedgene real, bamfile text )"
+qry <- "CREATE TABLE exp_r_tmp ( s_id int, s_name varchar(42), sample_id varchar(240),  
+   dataset_id smallint, rin numeric(3,1), numreads int, nummapped int, numunmapped int, mitomapped int, 
+   totalmapped int, overallmaprate real,  concordmaprate real, mitorate real, rrna_rate real, 
+   totalassignedgene real, bamfile text )"
 
 dbGetQuery(con, qry)
 
@@ -200,14 +211,22 @@ dbWriteTable(con, name="exp_r_tmp", value=smp[c("s_id", "s_name", "sample_id", "
 
 dbGetQuery(con, "CREATE INDEX idx_rnaseqtmp_sid ON exp_r_tmp (sample_id)")
 
-qry <- "INSERT into exp_rnaseq (s_id, s_name, flags, sample_id, dataset_id, rin, 
+qry <- "INSERT into exp_rnaseq (s_id, s_name, sample_id, dataset_id, rin, 
     numreads, nummapped, numunmapped, mitomapped, totalmapped,
     overallmaprate, concordmaprate, mitorate, rrna_rate, totalassignedgene, bamfile)
      SELECT * from exp_r_tmp t where 
       NOT EXISTS( SELECT * from exp_rnaseq r where r.sample_id = t.sample_id)"
 
 dbGetQuery(con, qry)
-
+dbGetQuery(con, "drop table exp_r_tmp")
 
 ```
+###TODO : populate datasets public flag and exp_rnaseq.flags
+```{r}
+
+```
+
+
+
+
 
