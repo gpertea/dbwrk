@@ -277,7 +277,7 @@ CREATE TABLE junctions (
     inGencode boolean,
     inGencodeStart boolean,
     inGencodeEnd boolean,
-    transcripts integer[], -- list of transcripts.id having this exon
+    transcripts integer[], -- list of transcripts.id having this junction
     Class jxClass,
     isFusion boolean
 );

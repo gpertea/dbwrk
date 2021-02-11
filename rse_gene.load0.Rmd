@@ -14,6 +14,25 @@ library("SummarizedExperiment")
 library("dplyr")
 ```
 
+
+## load source file names/paths for rse objects
+```{r}
+ld <- load("brainstorm/filenames.Rdata")
+rfn <- rse_filenames
+df <- data.frame("dataset"=character(), "file"=character())
+for (x in names(rfn)) {
+ ljx <- rfn[[x]]
+ djx <- sapply(ljx, paste, collapse=",")
+ names(djx) <- NULL
+ d <- data.frame("dataset"=names(ljx), "file"=djx)
+ df <- rbind(df, d)
+}
+df <- df[order(df$dataset),]
+write.table(df, file="brainstorm/filenames.rse.tab", quote = FALSE, row.names=FALSE, sep="\t")
+```
+
+
+
 ## load latest rse_gene object
 
 ```{r}
@@ -21,11 +40,22 @@ library("dplyr")
 load("data/RNAseq_Collection_postQC_n5536_11dataset_2021-01_geneRSE.Rdata")
 g_cd <- as.data.frame(colData(rse_gene))
 g_rd <- as.data.frame(rowData(rse_gene))
-g_a <- assay(rse_gene)
+g_a <- as.data.frame(assay(rse_gene))
+
+truncSmpID <- function(x) {
+  mp <- regexpr(';',x, fixed=TRUE)
+  if (mp[[1]]==-1) return(x)
+  return(substr(x,1,mp[[1]]-1))
+}
+## truncate the sample_id to the first ';'
+colnames(g_a) <- sapply(colnames(g_a), truncSmpID)
+g_cd$SAMPLE_ID <- sapply(g_cd$SAMPLE_ID, truncSmpID)
+rownames(g_cd) <- sapply(rownames(g_cd), truncSmpID)
+# to get the gene counts for a specific gene in a specific sample:
+# g_a['ENSG00000227232.5','R12259_C4L03ACXX_CGCTCATT_L00']
 ```
 
 ### Connect to database
-
 ```{r}
 library('RPostgreSQL')
 
@@ -40,10 +70,13 @@ con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv
 #show tables
 dbListTables(con)
 ```
+
 ##Regions table
 Only execute this once for loading initial region data (or when an updated regions file is provided)
+
 ```{r}
 regtable <- read.table("brain_regions.csv", header=T, sep=',')
+dbGetQuery(con, "drop table if exists regs_tmp")
 dbWriteTable(con, name="regs_tmp", value=regtable, append=FALSE, row.names=FALSE, temporary=TRUE)
 qry <- "INSERT into regions (name, fullname, alts)
 SELECT t.name, t.fullname, string_to_array(lower(t.alts), '|')
@@ -66,7 +99,7 @@ rownames(sd) <- NULL
 sdf <- sd[!duplicated(sd$brnum, fromLast=T),]
 ## populate the subjects table by only looking at 
 #---load in a temporary table so only new BrNums are appended
-
+dbGetQuery(con, "drop table if exists subj_tmp")
 dbWriteTable(con, name="subj_tmp", value=sdf, append=FALSE, row.names=FALSE, temporary=TRUE)
 r <- dbGetQuery(con, "CREATE UNIQUE INDEX idx_subjtmp_n ON subj_tmp (BrNum)")
 
@@ -86,6 +119,7 @@ cat("Subjects loaded: ",r$count,"\n")
 ## -- update datasets table
 dsfreq <- as.data.frame(table(g_cd$Dataset, dnn=c("name")))
 colnames(dsfreq) <- tolower(colnames(dsfreq))
+dbGetQuery(con, "drop table if exists dsets_tmp")
 dbWriteTable(con, name="dsets_tmp", value=dsfreq, append=FALSE,
              row.names=FALSE, temporary=TRUE)
 qry <- "INSERT into datasets (name)
@@ -93,7 +127,7 @@ qry <- "INSERT into datasets (name)
     NOT EXISTS( SELECT * from datasets d where d.name = t.name )"
 r <- dbGetQuery(con, qry)
 v <- dbGetQuery(con, "drop table dsets_tmp")
-cat("Datasets added: ",nrow(r),"\n")
+cat("Datasets added: ", nrow(r),"\n")
 ```
 
 ```{r}
@@ -107,17 +141,18 @@ smp <- g_cd[ c("BrNum", "Dataset", "SAMPLE_ID", "RNum", "RIN", "Region",
     "overallMapRate", "concordMapRate", "mitoRate", "rRNA_rate", "totalAssignedGene", "bamFile") ]
 colnames(smp) <- tolower(colnames(smp))
 ## simplify sample_id so it has only the first lane suffix
-smp$sample_id <- sapply(smp$sample_id, function(x) {
-  mp <- regexpr(';',x, fixed=TRUE)
-  if (mp[[1]]==-1) return(x)
-  return(substr(x,1,m[[1]]-1))
-})
+## (truncate at the first semicolon)
+#smp$sample_id <- sapply(smp$sample_id, function(x) {
+#  mp <- regexpr(';',x, fixed=TRUE)
+#  if (mp[[1]]==-1) return(x)
+#  return(substr(x,1,mp[[1]]-1))
+#})
 
 nd <- sum( duplicated(smp$sample_id) )
 if (nd>0) 
   stop("Error: duplicates found in sample_id after semicolon truncation")
 #smp$bamfile <- sapply(smp[,"bamFile"], paste, collapse=';')
-## simplify bamfile lists so the path is only kept once
+## simplify bamfile lists so the directory path is only kept once
 smp$bamfile <- sapply(smp$bamfile, function(x) {
   if (length(x)==1) return(x)
   mp <- regexpr('/[^\\/]+$',x, perl=TRUE)
@@ -127,7 +162,6 @@ smp$bamfile <- sapply(smp$bamfile, function(x) {
   return(paste(r, collapse=','))
 })
 
-
 ##
 rtbl <- as.data.frame(table(smp[,c('region', 'dataset')]))
 rtbl <- subset(rtbl, Freq>0)
@@ -136,7 +170,7 @@ rtbl <- rtbl[order(rtbl$region), ]
 ## check if all regions are recognized and get their id:
 rdf <- data.frame("id"=as.numeric(0), "name"=unique(smp$region))
 
-dbGetQuery(con, "drop table reg_tmp")
+dbGetQuery(con, "drop table if exists reg_tmp")
 dbWriteTable(con, name="reg_tmp", value=rdf, 
              append=FALSE, row.names=FALSE, temporary=T)
 
@@ -169,7 +203,7 @@ colnames(smp) [colnames(smp) == "rnum"] <- "name"
 
 ## 
 ## remove duplicate BrNum entries, keep only the last one in each group
-dbGetQuery(con, "drop table samples_tmp")
+dbGetQuery(con, "drop table if exists samples_tmp")
 dbWriteTable(con, name="samples_tmp", value=smp[c("name", "subj_id", "r_id")], 
              append=FALSE, row.names=FALSE, temporary=T)
 

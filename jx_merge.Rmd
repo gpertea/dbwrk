@@ -1,0 +1,31 @@
+---
+title: "jx_merge"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library("SummarizedExperiment")
+library("dplyr")
+```
+
+```{r}
+assign("rsejx1", get(load("data/dlpfc_polyA_brainseq_phase1_hg38_rseJxn_merged_n732.rda")) )
+assign("rsejx2", get(load("data/dlpfc_ribozero_brainseq_phase2_hg38_rseJxn_merged_n453.rda")) )
+```
+
+```{r}
+cd1 <- as.data.frame(colData(rsejx1))
+cd2 <- as.data.frame(colData(rsejx2))
+```
+
+```{r}
+ra1 <- assay(rsejx1)
+# to access the count for junction chr1:15226-185757 in sample R5691
+ra1["chr1:15226-185757(*)",'R5691']
+```
+
+
