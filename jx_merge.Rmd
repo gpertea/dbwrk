@@ -18,6 +18,10 @@ assign("rsejx2", get(load("data/dlpfc_ribozero_brainseq_phase2_hg38_rseJxn_merge
 ```
 
 ```{r}
+assign("bsp1_gene", get(load("data/dlpfc_polyA_brainseq_phase1_hg38_rseGene_merged_n732"))) 
+```
+
+```{r}
 cd1 <- as.data.frame(colData(rsejx1))
 cd2 <- as.data.frame(colData(rsejx2))
 ```

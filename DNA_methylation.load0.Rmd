@@ -19,7 +19,7 @@ library("dplyr")
 ## load() returns the name of the object, get (objname) gets the object
 ## assign("a", get("b")) is the same with: a <- b
 #assign("dnam", get(load("brainstorm/libd_wgbs_pd.rda")) )
-ld <- load("brainstorm/libd_wgbs_pd.rda")
+ld <- load("DNAmet/libd_wgbs_pd.rda")
 dpd <- pd_final
 ## rename/adjust some columns and
 #pd <- dnam
@@ -39,7 +39,11 @@ pg_pass <- subset(dbp, database=="rse")[[1,5]]
 pg <- dbDriver("PostgreSQL")
 
 con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv")
-#show tables
-dbListTables(con)
+
+r <- dbGetQuery(con, "select count(*) from subjects")
+message("Subjects count: ",r$count)
+```
+```{r}
+
 ```
 

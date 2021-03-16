@@ -101,7 +101,7 @@ sdf <- sd[!duplicated(sd$brnum, fromLast=T),]
 #---load in a temporary table so only new BrNums are appended
 dbGetQuery(con, "drop table if exists subj_tmp")
 dbWriteTable(con, name="subj_tmp", value=sdf, append=FALSE, row.names=FALSE, temporary=TRUE)
-r <- dbGetQuery(con, "CREATE UNIQUE INDEX idx_subjtmp_n ON subj_tmp (BrNum)")
+r <- dbGetQuery(con, "CREATE UNIQUE INDEX idx_subjtmp_n ON subj_tmp (brnum)")
 
 qry <- "INSERT into subjects (brnum, age, sex, race, dx)
  SELECT DISTINCT t.brnum, cast(t.age as real), cast(t.sex as subjsex),

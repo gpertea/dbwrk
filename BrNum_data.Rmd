@@ -1,0 +1,82 @@
+---
+title: "brnum_data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## BrNum data
+
+```{r}
+library('readxl')
+
+```
+```{r}
+brdata = as.data.frame(read_excel("BrNum_LIBDIntranet_031221.n2511.xlsx"))
+colnames(brdata)=tolower(colnames(brdata))
+colnames(brdata)[colnames(brdata) == "primarydx"] <- "dx"
+colnames(brdata)[colnames(brdata) ==  "agedeath"] <- "age"
+colnames(brdata)[colnames(brdata) ==  "manner of death"] <- "mod"
+brdata$dx[brdata$dx=="BPNOS"] <- "BpNOS"
+brdata$dx[brdata$dx=="Alzheimer"] <- "AD"
+
+```
+
+
+```{r}
+#library('dplyr')
+library('RPostgreSQL')
+
+dbp <- read.delim(".pgpass", sep=":", header=TRUE)
+pg_db <- "rse"
+pg_user <- subset(dbp, database=="rse")[[1,4]]
+pg_pass <- subset(dbp, database=="rse")[[1,5]]
+
+pg <- dbDriver("PostgreSQL")
+
+con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv")
+#dbListTables(con)
+r <- dbGetQuery(con, "select count(*) from subjects")
+message("Subjects count: ",r$count)
+```
+## Load Br data in a temporary table
+```{r}
+r <- dbGetQuery(con, "drop table if exists subj_tmp")
+dbWriteTable(con, name="subj_tmp", value=brdata, append=FALSE, row.names=FALSE, temporary=TRUE)
+r <- dbGetQuery(con, "CREATE UNIQUE INDEX idx_subjtmp_n ON subj_tmp (brnum)")
+r <- dbGetQuery(con, "select count(*) from subj_tmp")
+message(r$count, " rows loaded in subj_tmp")
+```
+## Validation and possible updates
+```{r}
+rdsex <- dbGetQuery(con, "select s.brnum, s.sex, t.sex from subjects s, subj_tmp t where s.brnum=t.brnum and s.sex!=CAST(t.sex as subjsex)")
+if (nrow(rdsex)>0) {
+  message("WARNING: ", nrow(rdsex), " entries have different sex!")
+  stop("Problems: check your data!")
+}
+
+rdx <- dbGetQuery(con, "select s.brnum, s.dx, t.dx from subjects s, subj_tmp t where s.brnum=t.brnum and s.dx!=CAST(t.dx as subjdx)")
+if (nrow(rdx)>0) {
+  message("WARNING: ", nrow(rdx), " entries have different Dx!")
+  stop("Problems: check your data!")
+}
+
+rdrace <- dbGetQuery(con, "select s.brnum, s.race, t.race from subjects s, subj_tmp t where s.brnum=t.brnum and s.race!=CAST(t.race as subjrace)")
+if (nrow(rdrace)>0) {
+  message("WARNING: ", nrow(rdrace), " entries have different race!")
+  stop("Problems: check your data!")
+}
+
+
+rdage <- dbGetQuery(con, "select a.brnum, a.age, b.age from subjects a, subj_tmp b where a.brnum=b.brnum and a.age != CAST(b.age as NUMERIC(5,2))")
+if (nrow(rdage)>0) {
+  message("WARNING: ", nrow(rdage), " entries have different age, will be updated!")
+  head(rdage)
+  r <- dbGetQuery(con, "select a.brnum, a.age, b.age from subjects a, subj_tmp b where a.brnum=b.brnum and a.age != CAST(b.age as NUMERIC(5,2))")
+}
+
+
+```
+

@@ -17,11 +17,13 @@ CREATE TYPE subjDx AS
 CREATE TABLE subjects (
     id serial PRIMARY KEY, -- internal unique subject identifier
     brnum varchar(24), -- BrNum or other unique subject identifier
-    age real NOT NULL,
+    age numeric(5,2) NOT NULL,
     sex subjSex,
     race subjRace,
     dx subjDx,
-    xdata text -- additional info if available
+    mod varchar(42), -- manner of death
+    pmi numeric(5,1), -- ?
+    xdata text -- additional info if/when available
 );
 
 CREATE UNIQUE INDEX idx_subj_brnum ON subjects (brnum);
