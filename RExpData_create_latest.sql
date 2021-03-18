@@ -2,34 +2,66 @@
 -- DROP TABLE public.subjects;
 
 CREATE TYPE subjRace AS
- ENUM ('AA','AS', 'CAUC', 'HISP', 'Other');
+ ENUM ('AA','AS', 'CAUC', 'HISP', 'Multi-Racial', 'Other');
 
 CREATE TYPE subjSex AS
  ENUM ('M','F', 'O');
 
-CREATE TYPE subjDx AS
- ENUM ('Control', 'Schizo', 'Bipolar', 'MDD', 'PTSD', 'AD', 'BpNOS', 'Other');
+--CREATE TYPE subjDx AS
+-- ENUM ('Control', 'Schizo', 'Bipolar', 'MDD', 'PTSD', 'AD', 'BpNOS', 'Other');
 -- MDD = Major Depressive Disorder
 -- AD = Alzheimer's Dementia
 -- BpNOS = Bipolar Not Otherwise Specified
+DROP TABLE IF EXISTS dx;
+
+CREATE TABLE dx ( -- Diagnosis table
+   id serial PRIMARY KEY, 
+   dx varchar(26) NOT NULL, --short name/abbreviation to display
+   name varchar(72) -- full name, no abbreviation
+);
+--CREATE INDEX idx_dx_alts ON dx USING GIN(alts);
+INSERT INTO dx (dx, name) VALUES
+ ('Control', NULL),
+ ('Schizo', 'Schizophrenia'),
+ ('MDD', 'Major Depressive Disorder'),
+ ('PTSD', 'Post traumatic stress disorder'),
+ ('R/O PTSD', 'Rule Out PTSD'),
+ ('Autism', NULL),
+ ('ADHD', 'Attention deficit hyperactivity disorder'),
+ ('Anxiety', NULL),
+ ('AD', 'Alzheimer''s Disease'),
+ ('preclinicalAD', 'preclinical Alzheimer''s Disease'),
+ ('Bipolar', NULL),
+ ('BpNOS', 'Bipolar Not Otherwise Specified'),
+ ('Dementia', NULL),
+ ('ED', 'Eating disorder'),
+ ('OCD', 'Obsessive compulsive disorder'),
+ ('Alcohol', 'Alcohol dependence'),
+ ('Substance', 'Substance dependence'),
+ ('Tics', NULL),
+ ('Williams', 'Williams'' syndrome'),
+ ('Neuro', NULL),
+ ('Medical', NULL);
 
 
 CREATE TABLE subjects (
-    id serial PRIMARY KEY, -- internal unique subject identifier
-    brnum varchar(24), -- BrNum or other unique subject identifier
+    id serial PRIMARY KEY, -- internal unique subject identifier (int)
+    brnum varchar(24), -- BrNum or other unique alphanumeric identifier
+    brint integer, -- for BrNums only the integer (numeric) part
     age numeric(5,2) NOT NULL,
     sex subjSex,
     race subjRace,
-    dx subjDx,
+    dx_id integer NOT NULL REFERENCES dx (id),
     mod varchar(42), -- manner of death
     pmi numeric(5,1), -- ?
     xdata text -- additional info if/when available
 );
 
 CREATE UNIQUE INDEX idx_subj_brnum ON subjects (brnum);
+CREATE UNIQUE INDEX idx_subj_bri ON subjects (brint);
 CREATE INDEX idx_subj_sex ON subjects (sex);
 CREATE INDEX idx_subj_race ON subjects (race);
-CREATE INDEX idx_subj_dx ON subjects (dx);
+CREATE INDEX idx_subj_dx ON subjects (dx_id);
 CREATE INDEX idx_subj_age ON subjects (age);
 
 -- ======================================================== --
