@@ -2,7 +2,7 @@
 -- DROP TABLE public.subjects;
 
 CREATE TYPE subjRace AS
- ENUM ('AA','AS', 'CAUC', 'HISP', 'Multi-Racial', 'Other');
+ ENUM ('AA','AS', 'CAUC', 'HISP', 'Native American', 'Multi-Racial', 'Other');
 
 CREATE TYPE subjSex AS
  ENUM ('M','F', 'O');

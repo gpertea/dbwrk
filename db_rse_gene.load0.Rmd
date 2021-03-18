@@ -97,19 +97,58 @@ colnames(sd) <- tolower(colnames(sd))
 rownames(sd) <- NULL
 ## remove duplicate BrNum entries, keeping only the last one in each group
 sdf <- sd[!duplicated(sd$brnum, fromLast=T),]
-## populate the subjects table by only looking at 
-#---load in a temporary table so only new BrNums are appended
-dbGetQuery(con, "drop table if exists subj_tmp")
-dbWriteTable(con, name="subj_tmp", value=sdf, append=FALSE, row.names=FALSE, temporary=TRUE)
-r <- dbGetQuery(con, "CREATE UNIQUE INDEX idx_subjtmp_n ON subj_tmp (brnum)")
+```
 
-qry <- "INSERT into subjects (brnum, age, sex, race, dx)
- SELECT DISTINCT t.brnum, cast(t.age as real), cast(t.sex as subjsex),
-            cast(t.race as subjrace), cast(t.dx as subjdx) from subj_tmp t 
-            WHERE NOT EXISTS (SELECT * from subjects s where s.brnum = t.brnum)"
+Shuffle BrNums and establish dx_id
+```{r}
+set.seed(42)
+sdf <- sdf[sample(nrow(sdf)),]
+sdf$brint <- as.integer(gsub("^[^[:digit:]]+",'',sdf$brnum))
+```
+
+```{r}
+## check if all dx are recognized and get their id:
+dxidf <- data.frame("id"=as.numeric(0), "dx"=unique(sdf$dx))
+
+dbGetQuery(con, "drop table if exists dx2id_tmp")
+dbWriteTable(con, name="dx2id_tmp", value=dxidf, 
+             append=FALSE, row.names=FALSE, temporary=T)
+
+uqry <- "UPDATE dx2id_tmp t SET id=d.id FROM dx d 
+ WHERE lower(t.dx) = lower(d.dx) OR d.name ILIKE t.dx || '%'"
+
+r <- dbGetQuery(con, uqry)
+dbr <- dbGetQuery(con, "select dx from dx2id_tmp where id=0")
+if (nrow(dbr)>0) 
+  stop("The dx table needs update, dx entries could not be identified: ",dbr)
+dxid <- dbGetQuery(con, "select id, dx from dx2id_tmp")
+r <- dbGetQuery(con, "drop table dx2id_tmp")
+sdf$dx_id <- dxid$id[ match(sdf$dx, dxid$dx)]
+```
+
+Insert rows in subjects table as needed
+```{r}
+dbGetQuery(con, "drop table if exists subj_tmp")
+dbWriteTable(con, name="subj_tmp", value=sdf[c("brnum", "brint", "age", "sex", "race", "dx_id")], 
+             append=FALSE, row.names=FALSE, temporary=T)
+
+dbGetQuery(con, "CREATE INDEX idx_stmp_n ON subj_tmp (brnum)")
+
+qry <- "INSERT into subjects (brnum, brint, age, sex, race, dx_id)
+ SELECT DISTINCT t.brnum, t.brint, CAST(t.age as NUMERIC(5,2)), CAST(t.sex as subjsex), 
+ CAST(t.race as subjrace), t.dx_id from subj_tmp t where 
+   NOT EXISTS( SELECT * from subjects s where s.brnum = t.brnum )"
+
 r <- dbGetQuery(con, qry)
 
 r <- dbGetQuery(con, "drop table subj_tmp")
+
+```
+
+
+```{r}
+## populate the subjects table by only looking at 
+#---load in a temporary table so only new BrNums are appended
 r <- dbGetQuery(con, "select count(*) from subjects")
 cat("Subjects loaded: ",r$count,"\n")
 ```
@@ -202,7 +241,6 @@ smp$subj_id <- subj$id[ match(smp$brnum, subj$brnum) ]
 colnames(smp) [colnames(smp) == "rnum"] <- "name"
 
 ## 
-## remove duplicate BrNum entries, keep only the last one in each group
 dbGetQuery(con, "drop table if exists samples_tmp")
 dbWriteTable(con, name="samples_tmp", value=smp[c("name", "subj_id", "r_id")], 
              append=FALSE, row.names=FALSE, temporary=T)

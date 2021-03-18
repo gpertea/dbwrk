@@ -21,9 +21,13 @@ colnames(brdata)[colnames(brdata) ==  "agedeath"] <- "age"
 colnames(brdata)[colnames(brdata) ==  "manner of death"] <- "mod"
 brdata$dx[brdata$dx=="BPNOS"] <- "BpNOS"
 brdata$dx[brdata$dx=="Alzheimer"] <- "AD"
+brdata$brint <- as.integer(gsub("^[^[:digit:]]+", '', brdata$brnum))
+brdata$dx_id <- as.integer(0)
+## -- shuffle!
+set.seed(42)
+brdata <- brdata[sample(nrow(brdata)),]
 
 ```
-
 
 ```{r}
 #library('dplyr')
@@ -41,42 +45,69 @@ con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv
 r <- dbGetQuery(con, "select count(*) from subjects")
 message("Subjects count: ",r$count)
 ```
+
 ## Load Br data in a temporary table
 ```{r}
 r <- dbGetQuery(con, "drop table if exists subj_tmp")
 dbWriteTable(con, name="subj_tmp", value=brdata, append=FALSE, row.names=FALSE, temporary=TRUE)
 r <- dbGetQuery(con, "CREATE UNIQUE INDEX idx_subjtmp_n ON subj_tmp (brnum)")
+r <- dbGetQuery(con, "CREATE UNIQUE INDEX idx_subjtmp_i ON subj_tmp (brint)")
 r <- dbGetQuery(con, "select count(*) from subj_tmp")
 message(r$count, " rows loaded in subj_tmp")
 ```
 ## Validation and possible updates
+## fill subj_tmp.dx_id first
 ```{r}
-rdsex <- dbGetQuery(con, "select s.brnum, s.sex, t.sex from subjects s, subj_tmp t where s.brnum=t.brnum and s.sex!=CAST(t.sex as subjsex)")
+r <- dbGetQuery(con, "UPDATE subj_tmp t SET dx_id=d.id FROM dx d 
+ WHERE lower(t.dx) = lower(d.dx) OR d.name ILIKE t.dx || '%'")
+r <- dbGetQuery(con, "SELECT brnum, dx, age, sex, race from subj_tmp WHERE dx_id=0")
+if (nrow(r)>0) {
+  message("WARNING: ", nrow(r), " entries have unrecognized diagnosis!")
+  head(r)
+  stop("Update the dx table if needed or correct spelling of these entries")
+  
+}
+```
+
+
+```{r}
+rdsex <- dbGetQuery(con, "select s.brnum, s.sex, t.sex from subjects s, subj_tmp t where s.brint=t.brint and s.sex!=CAST(t.sex as subjsex)")
 if (nrow(rdsex)>0) {
   message("WARNING: ", nrow(rdsex), " entries have different sex!")
   stop("Problems: check your data!")
 }
 
-rdx <- dbGetQuery(con, "select s.brnum, s.dx, t.dx from subjects s, subj_tmp t where s.brnum=t.brnum and s.dx!=CAST(t.dx as subjdx)")
-if (nrow(rdx)>0) {
-  message("WARNING: ", nrow(rdx), " entries have different Dx!")
-  stop("Problems: check your data!")
-}
-
 rdrace <- dbGetQuery(con, "select s.brnum, s.race, t.race from subjects s, subj_tmp t where s.brnum=t.brnum and s.race!=CAST(t.race as subjrace)")
 if (nrow(rdrace)>0) {
-  message("WARNING: ", nrow(rdrace), " entries have different race!")
-  stop("Problems: check your data!")
+  message("WARNING: ", nrow(rdrace), " entries have different race! Updating..")
+  #stop("Problems: check your data!")
+  uq <- dbGetQuery(con, "update subjects s set race=CAST(t.race as subjrace) FROM subj_tmp t
+                    where t.brint=s.brint and s.race!=CAST(t.race AS subjrace)")
 }
 
 
-rdage <- dbGetQuery(con, "select a.brnum, a.age, b.age from subjects a, subj_tmp b where a.brnum=b.brnum and a.age != CAST(b.age as NUMERIC(5,2))")
+rdage <- dbGetQuery(con, "SELECT s.brnum, s.age, t.age FROM subjects s, subj_tmp t 
+                    WHERE s.brint=t.brint AND s.age != CAST(t.age as NUMERIC(5,2))")
 if (nrow(rdage)>0) {
-  message("WARNING: ", nrow(rdage), " entries have different age, will be updated!")
+  message("WARNING: ", nrow(rdage), " entries have different age, updating..")
   head(rdage)
-  r <- dbGetQuery(con, "select a.brnum, a.age, b.age from subjects a, subj_tmp b where a.brnum=b.brnum and a.age != CAST(b.age as NUMERIC(5,2))")
+  r <- dbGetQuery(con, "UPDATE subjects s SET age=CAST(t.age as NUMERIC(5,2)) FROM subj_tmp t
+                  WHERE s.brint=t.brint AND s.age!=CAST(t.age as NUMERIC(5,2))")
 }
 
 
 ```
+
+##Update NULL PMI and mod and add missing entries
+```{r}
+r <- dbGetQuery(con, "update subjects s set pmi=CAST(t.pmi as NUMERIC(5,1)) FROM subj_tmp t
+                    where t.brint=s.brint and s.pmi is NULL")
+r <- dbGetQuery(con, "update subjects s set mod=t.mod FROM subj_tmp t
+                    where t.brint=s.brint and s.mod is NULL AND t.mod is not NULL")
+r <- dbGetQuery(con, "INSERT INTO subjects (brnum, brint, age, sex, race, dx_id, mod, pmi)
+                SELECT t.brnum, t.brint, CAST(t.age as NUMERIC(5,2)), CAST(t.sex as subjsex), 
+ CAST(t.race as subjrace), t.dx_id, t.mod, t.pmi from subj_tmp t where 
+   NOT EXISTS( SELECT * from subjects s where s.brint = t.brint)")
+```
+
 
