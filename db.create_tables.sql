@@ -54,6 +54,7 @@ CREATE TABLE subjects (
     dx_id integer NOT NULL REFERENCES dx (id),
     mod varchar(42), -- manner of death
     pmi numeric(5,1), -- ?
+    dropped boolean, -- if subject was dropped due to subsequent information
     xdata text -- additional info if/when available
 );
 

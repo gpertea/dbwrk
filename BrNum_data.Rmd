@@ -13,6 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library('readxl')
 
 ```
+
 ```{r}
 brdata = as.data.frame(read_excel("BrNum_LIBDIntranet_031221.n2511.xlsx"))
 colnames(brdata)=tolower(colnames(brdata))
@@ -109,5 +110,34 @@ r <- dbGetQuery(con, "INSERT INTO subjects (brnum, brint, age, sex, race, dx_id,
  CAST(t.race as subjrace), t.dx_id, t.mod, t.pmi from subj_tmp t where 
    NOT EXISTS( SELECT * from subjects s where s.brint = t.brint)")
 ```
+
+```{r}
+r <- dbGetQuery(con, "select count(*) from subjects")
+message("Subjects count: ",r$count)
+## - show likely dropped BrNums that Amy no longer provides/supports
+sq <- "with x as (select s.id, brnum, brint, dx from subjects s, dx 
+    where s.dx_id=dx.id AND NOT EXISTS (select * from subj_tmp t where s.brint=t.brint))
+ SELECT 'P'||trim(to_char(x.id, '00000')) as p_id, brnum, brint, dx, string_agg(s.name,',') as samples 
+ from x, samples s where s.subj_id=x.id GROUP BY x.id, brnum, brint, dx"
+brmiss <- dbGetQuery(con,sq)
+if (nrow(brmiss)>0) {
+  message(nrow(brmiss), " entries were not provided by LIMS")
+  head(brmiss, n=20)
+}
+```
+```{r}
+qry <- "SELECT 'P'||trim(to_char(s.id, '00000')) as p_id, brnum, brint, dx, sex, race, age 
+ FROM subjects s, dx d where d.id=s.dx_id";
+subj <- dbGetQuery(con, qry)
+write.table(subj, file="subjects_data.tab", row.names = F, sep = "\t", quote=F)
+
+qry <- "SELECT s.name, 'P'||trim(to_char(p.id, '00000')) as p_id, brnum, dx, sex, race, age 
+ FROM subjects p, dx d, samples s WHERE s.subj_id=p.id AND d.id=p.dx_id"
+samp <- dbGetQuery(con, qry)
+write.table(samp, file="samples_phenodata.tab", row.names = F, sep = "\t", quote=F)
+
+```
+
+
 
 

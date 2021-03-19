@@ -40,10 +40,25 @@ pg <- dbDriver("PostgreSQL")
 
 con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv")
 
-r <- dbGetQuery(con, "select count(*) from subjects")
-message("Subjects count: ",r$count)
-```
-```{r}
+dbsubj <- dbGetQuery(con, "select * from subjects")
 
+message(nrow(dbsubj)," subjects loaded from database: ")
+```
+## check if all BrNums are in the database already
+```{r}
+brna <- subset(dpd, is.na(brnum))
+if (nrow(brna)>0) {
+  fn="missing_DNAmet_brnums.csv"
+  message(nrow(brna), " entries missing brnum, written to ", fn)
+  write.csv(brna, "DNAmet/missing_brnum.csv", row.names=FALSE)
+}
+##write.csv(brna, "DNAmet/missing_brnum.csv", row.names=FALSE)
+brv <- unique(subset(dpd, !is.na(brnum), select=c(brnum, age, sex,race,dx)))
+brv$brint <- as.integer(gsub("^[^[:digit:]]+", '', brv$brnum))
+#are we missing any BrNum which is not in our dataset?
+brmiss <- anti_join(brv, dbsubj, by="brint")
+if (nrow(brmiss)>0) {
+  message(nrow(brmiss), " entries missing from subjects table! (see brmiss dataframe)")
+}
 ```
 

@@ -56,6 +56,15 @@ SELECT json_agg(t) FROM
 	   WHERE x.s_id = s.id AND s.subj_id=p.id
 	    GROUP BY 2) t
 
+-- say subj_tmp has a list of brnums but missing some entries that are in subjects
+-- show the missing entries (as found in subjects table), listing the samples
+-- from each of them; also shows how the new publication ID should be generated
+with x as (select s.id, brnum, brint, dx from subjects s, dx 
+    where s.dx_id=dx.id AND NOT EXISTS (select * from subj_tmp t where s.brint=t.brint))
+ SELECT 'S'||trim(to_char(x.id, '00000')) as pub_id, brnum, brint, dx, string_agg(s.name,',') as samples 
+ from x, samples s where s.subj_id=x.id GROUP BY x.id, brnum, brint, dx
+
+-- update as needed:
 
 ------------ more complex filters ------
 -- show per region counts for AA and CAUC, Control vs Schizo:
