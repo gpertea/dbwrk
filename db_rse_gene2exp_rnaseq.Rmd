@@ -1,0 +1,363 @@
+---
+title: "rse_gene2exp_rnaseq"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This script re-loads or updates the exp_rnaseq metadata fields 
+with the RNA-Seq sample metadata from a rse_gene R object
+
+## Setup libraries
+
+```{r}
+library("SummarizedExperiment")
+library("dplyr")
+```
+
+```{r}
+## WARNING: setup expTableReload to TRUE if you want to drop the exp_rnaseq table (!) 
+## and load it from the given rse_gene object
+expTableReload = FALSE
+rseFile="data/RNAseq_Collection_postQC_n5536_11dataset_2021-01_geneRSE.Rdata"
+
+```
+
+
+## load latest rse_gene object
+
+```{r}
+load(rseFile)
+g_cd <- as.data.frame(colData(rse_gene))
+g_rd <- as.data.frame(rowData(rse_gene))
+g_a <- as.data.frame(assay(rse_gene))
+
+```
+Simplify g_cd$SAMPLE_ID (and rownames(g_cd) so those having multiple underscore-separated
+ tokens only keep first token - usually the lane suffix
+
+E.g. truncate `R12259_C4L03ACXX_CGCTCATT_L00` to `R12259_C4L03ACXX`
+
+```{r}
+## function to truncate sample ID to the first semicolon
+## and also to the 2nd underscore if there
+truncSmpID <- function(x) {
+  mp <- regexpr(';',x, fixed=TRUE)
+  if (mp[[1]]>-1) x=substr(x,1,mp[[1]]-1)
+  mp <- gregexpr('_',x, fixed=TRUE)
+  if (length(mp[[1]])<2) return(x)
+  return(substr(x,1,mp[[1]][2]-1))
+}
+## truncate the sample_id to the first ';'
+g_cd$SAMPLE_ID <- sapply(g_cd$SAMPLE_ID, truncSmpID)
+nd <- sum( duplicated(g_cd$SAMPLE_ID) )
+if (nd>0)
+  stop("Error: duplicates found in SAMPLE_ID after truncation")
+
+colnames(g_a) <- sapply(colnames(g_a), truncSmpID)
+rownames(g_cd) <- sapply(rownames(g_cd), truncSmpID)
+# to get the gene counts for a specific gene in a specific sample:
+# g_a['ENSG00000227232.5','R12259_C4L03ACXX_CGCTCATT_L00']
+```
+
+### Connect to database
+```{r}
+library('RPostgreSQL')
+
+dbp <- read.delim(".pgpass", sep=":", header=TRUE)
+pg_db <- "rse"
+pg_user <- subset(dbp, database=="rse")[[1,4]]
+pg_pass <- subset(dbp, database=="rse")[[1,5]]
+
+pg <- dbDriver("PostgreSQL")
+
+con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv")
+#show tables
+dbListTables(con)
+```
+
+## Prepare the `subjects` set as found in this rse_gene:
+```{r}
+#select columns of interest
+sd <- g_cd[ c("BrNum", "Age", "Sex", "Race", "Dx") ]
+#convert column names to lowercase
+colnames(sd) <- tolower(colnames(sd))
+#remove row names
+rownames(sd) <- NULL
+## remove duplicate BrNum entries, keeping only the last one in each group
+sdf <- sd[!duplicated(sd$brnum, fromLast=T),]
+## find if there are any sdf$brnum that do NOT match expected pattern (^Br\d+$)
+nbr <- subset(sdf, !grepl("^Br\\d+$", brnum, perl=TRUE))
+if (nrow(nbr)>0) {
+  stop("Found entries with unexpected BrNum pattern (see nbr)!")
+}
+
+sdf$brint <- as.integer(gsub("^[^[:digit:]]+",'',sdf$brnum))
+```
+
+Check if all dx are recognized and get their id:
+```{r}
+## assumes dx table is loaded already
+dxidf <- data.frame("id"=as.numeric(0), "dx"=unique(sdf$dx))
+
+r <- dbGetQuery(con, "drop table if exists dx2id_tmp")
+rw <- dbWriteTable(con, name="dx2id_tmp", value=dxidf, 
+             append=FALSE, row.names=FALSE, temporary=T)
+
+uqry <- "UPDATE dx2id_tmp t SET id=d.id FROM dx d 
+ WHERE lower(t.dx) = lower(d.dx) OR d.name ILIKE t.dx || '%'"
+
+r <- dbGetQuery(con, uqry)
+dbr <- dbGetQuery(con, "select dx from dx2id_tmp where id=0")
+if (nrow(dbr)>0) 
+  stop("The dx table needs to be updated, dx entries could not be identified: ",dbr)
+dxid <- dbGetQuery(con, "select id, dx from dx2id_tmp")
+r <- dbGetQuery(con, "drop table dx2id_tmp")
+sdf$dx_id <- dxid$id[ match(sdf$dx, dxid$dx)]
+```
+
+
+Check if any new subjects are to be added to the `subjects` table from this rse_gene object
+```{r}
+r <- dbGetQuery(con, "drop table if exists subj_tmp")
+rw <- dbWriteTable(con, name="subj_tmp", value=sdf[c("brnum", "brint", "age", "sex", "race", "dx_id")], 
+             append=FALSE, row.names=FALSE, temporary=T)
+
+r <- dbGetQuery(con, "CREATE INDEX idx_stmp_n ON subj_tmp (brint)")
+
+qry <- "SELECT DISTINCT t.brnum, t.brint FROM subj_tmp t where 
+   NOT EXISTS( SELECT * from subjects s where s.brint = t.brint )"
+
+r <- dbGetQuery(con, qry)
+
+insqry <- "INSERT into subjects (brnum, brint, age, sex, race, dx_id)
+ SELECT DISTINCT t.brnum, t.brint, CAST(t.age as NUMERIC(5,2)), CAST(t.sex as subjsex), 
+ CAST(t.race as subjrace), t.dx_id FROM subj_tmp t where 
+   NOT EXISTS( SELECT * from subjects s where s.brint = t.brint )"
+
+if (nrow(r)>0) {
+  message("Subjects to be added: ", nrow(r))
+  #r <- dbGetQuery(con, insqry)
+}else {
+  message("No new subjects to be added.")
+}
+
+r <- dbGetQuery(con, "drop table subj_tmp")
+
+```
+
+### Loads any new datasets (projects) 
+```{r}
+## -- update datasets table
+dsfreq <- as.data.frame(table(g_cd$Dataset, dnn=c("name")))
+colnames(dsfreq) <- tolower(colnames(dsfreq))
+r <- dbGetQuery(con, "drop table if exists dsets_tmp")
+rw <- dbWriteTable(con, name="dsets_tmp", value=dsfreq, append=FALSE,
+             row.names=FALSE, temporary=TRUE)
+
+qry <- "SELECT t.name from dsets_tmp t where 
+    NOT EXISTS( SELECT * from datasets d where d.name = t.name )"
+r <- dbGetQuery(con, qry)
+
+insqry <- "INSERT into datasets (name)
+    SELECT t.name from dsets_tmp t where 
+     NOT EXISTS( SELECT * from datasets d where d.name = t.name )"
+
+if (nrow(r)>0) {
+   message("Datasets to be added: ", nrow(r))
+   #r <- dbGetQuery(con, insqry)
+} else {
+  message("No new datasets (projects) to be added.")
+}
+
+v <- dbGetQuery(con, "drop table dsets_tmp")
+```
+
+```{r}
+## load the datasets and subjects in dataframes to get the ids
+ds <- dbGetQuery(con, 'select * from datasets')
+subj <- dbGetQuery(con, 'select * from subjects')
+
+## create a smp dataframe to load data from
+smp <- g_cd[ c("BrNum", "Dataset", "SAMPLE_ID", "RNum", "RIN", "Region", 
+    "numReads", "numMapped","numUnmapped", "mitoMapped", "totalMapped",
+    "overallMapRate", "concordMapRate", "mitoRate", "rRNA_rate", "totalAssignedGene", "bamFile") ]
+colnames(smp) <- tolower(colnames(smp))
+#smp$bamfile <- sapply(smp[,"bamFile"], paste, collapse=';')
+
+## Simplify bamfile lists so the directory path is only kept once
+smp$bamfile <- sapply(smp$bamfile, function(x) {
+  if (length(x)==1) return(x)
+  mp <- regexpr('/[^\\/]+$',x, perl=TRUE)
+  if (mp[[1]]==-1) return(paste(x, collapse=','))
+  r <- sapply(regmatches(x,mp), substr, 2, nchar(x))
+  r[[1]] <- x[[1]]
+  return(paste(r, collapse=','))
+})
+
+##
+rtbl <- as.data.frame(table(smp[,c('region', 'dataset')]))
+rtbl <- subset(rtbl, Freq>0)
+rtbl <- rtbl[order(rtbl$region), ]
+
+## check if all regions are recognized and get their id:
+rdf <- data.frame("id"=as.numeric(0), "name"=unique(smp$region))
+
+r <- dbGetQuery(con, "drop table if exists reg_tmp")
+rt <- dbWriteTable(con, name="reg_tmp", value=rdf, 
+             append=FALSE, row.names=FALSE, temporary=T)
+
+uqry <- "UPDATE reg_tmp t SET id=r.id FROM regions r 
+ WHERE lower(t.name) = lower(r.name) OR 
+   lower(t.name)=ANY(alts) OR r.fullname ILIKE t.name || '%'"
+
+r <- dbGetQuery(con, uqry)
+dbr <- dbGetQuery(con, "select name from reg_tmp where id=0")
+if (nrow(dbr)>0) 
+  stop("The <regions> table needs update, regions could not be identified: ", dbr)
+
+regs <- dbGetQuery(con, "select id, name from reg_tmp")
+dbGetQuery(con, "drop table reg_tmp")
+
+##strip RNum and convert it to numeric? not anymore
+#smp$rnum <- substring(smp$rnum, 2, nchar(smp$rnum))
+#smp$rnum <- as.numeric(smp$rnum)
+
+## adding region id to samples:
+smp$r_id <- regs$id[ match(smp$region, regs$name)]
+
+## adding dataset_id from matching entries in ds:
+smp$dataset_id <- ds$id[ match(smp$dataset, ds$name) ]
+## adding subj_id
+smp$subj_id <- subj$id[ match(smp$brnum, subj$brnum) ]
+```
+
+Check if there are any new samples and add them to `samples` table
+```{r}
+## load samples table through a temporary table
+## rename rnum to "name" for the samples table
+colnames(smp) [colnames(smp) == "rnum"] <- "name"
+
+## 
+r <- dbGetQuery(con, "drop table if exists samples_tmp")
+rt <- dbWriteTable(con, name="samples_tmp", value=smp[c("name", "subj_id", "r_id")], 
+             append=FALSE, row.names=FALSE, temporary=T)
+
+r <- dbGetQuery(con, "CREATE INDEX idx_stmp_n ON samples_tmp (name)")
+
+qry <- "SELECT DISTINCT t.name, t.subj_id, t.r_id FROM samples_tmp t where 
+   NOT EXISTS( SELECT * from samples s where s.name = t.name )"
+
+r <- dbGetQuery(con, qry)
+
+insqry <- "INSERT into samples (name, subj_id, r_id)
+ SELECT DISTINCT t.name, t.subj_id, t.r_id from samples_tmp t where 
+   NOT EXISTS( SELECT * from samples s where s.name = t.name )"
+
+if (nrow(r)>0) {
+   message("Samples to be added: ", nrow(r))
+   #r <- dbGetQuery(con, insqry)
+} else {
+  message("No new samples to be added.")
+}
+
+r <- dbGetQuery(con, "drop table samples_tmp")
+```
+Load exp_RNASeq (metadata only)
+
+```{r}
+if (expTableReload) {
+  #stop("Are you sure? comment this line if you really want to DROP exp_RNASeq!")
+  r <- dbGetQuery(con, 'DROP TABLE exp_rnaseq CASCADE')
+  r <- dbGetQuery(con, "CREATE TABLE exp_rnaseq (
+     id serial PRIMARY KEY,
+     s_id integer NOT NULL REFERENCES samples (id), -- tissue sample ID
+     s_name varchar(42), --redundancy check, references samples (name)
+     sample_id varchar(240),  -- as in SAMPLE_ID column in RSE
+     flags bit(8), -- single reads, qc_fail, non-public, internal restricted,...
+     dataset_id smallint, -- experiment group / dataset / project
+     protocol RnaSeqProtocol,
+     pr_date date, -- processing date
+     RIN numeric(3,1),
+     g_set_id int, -- feature_sets('g', id)
+     g_data real[],
+     t_set_id int, -- feature_sets('t', id)
+     t_data real[],
+     e_set_id int, -- feature_sets('e', id)
+     e_data real[],
+     j_set_id int, -- feature_sets('j', id)
+     j_data real[],
+     numReads int,
+     numMapped int,
+     numUnmapped int,
+     mitoMapped int,
+     totalMapped int,
+     overallMapRate real,
+     concordMapRate real,
+     mitoRate real,
+     rRNA_rate real,
+     totalAssignedGene real,
+     bamFile text
+  )")
+  r <- dbGetQuery(con, "CREATE INDEX idx_expRNASeq_sid on exp_RNASeq (s_id)")
+  r <- dbGetQuery(con, "CREATE INDEX idx_expRNASeq_sname on exp_RNASeq (s_name)")
+  r <- dbGetQuery(con, "CREATE INDEX idx_expRNASeq_did on exp_RNASeq (dataset_id)")
+  r <- dbGetQuery(con, "CREATE INDEX idx_expRNASeq_rin on exp_RNASeq (RIN)")
+  r <- dbGetQuery(con, "CREATE UNIQUE INDEX idx_rnaseqexp_smp on exp_RNASeq (sample_id)")
+}
+
+## rename "name" column to "s_name" for the exp_RNASeq table
+colnames(smp) [colnames(smp) == "name"] <- "s_name"
+
+samples=dbGetQuery(con,"select * from samples")
+
+# create a join s_id column by fetching the samples$s_name with samples$name
+smp$s_id <- samples$id[ match(smp$s_name, samples$name) ]
+
+rt <- dbGetQuery(con, "drop table if exists exp_r_tmp")
+
+qry <- "CREATE TABLE exp_r_tmp ( s_id int, s_name varchar(42), sample_id varchar(240),  
+   dataset_id smallint, rin numeric(3,1), numreads int, nummapped int, numunmapped int, mitomapped int, 
+   totalmapped int, overallmaprate real,  concordmaprate real, mitorate real, rrna_rate real, 
+   totalassignedgene real, bamfile text )"
+
+r <- dbGetQuery(con, qry)
+
+rw <- dbWriteTable(con, name="exp_r_tmp", value=smp[c("s_id", "s_name", "sample_id", "dataset_id",
+    "rin", "numreads", "nummapped", "numunmapped", "mitomapped", "totalmapped",
+    "overallmaprate", "concordmaprate", "mitorate", "rrna_rate", "totalassignedgene",
+    "bamfile")], append=TRUE, row.names=FALSE)
+
+rt <- dbGetQuery(con, "CREATE INDEX idx_rnaseqtmp_sid ON exp_r_tmp (sample_id)")
+
+wins <- "FROM exp_r_tmp t WHERE NOT EXISTS( SELECT * from exp_rnaseq r where r.sample_id = t.sample_id)"
+
+qry <- paste0("SELECT count(*) ",wins)
+insqry <- paste0("INSERT into exp_rnaseq (s_id, s_name, sample_id, dataset_id, rin, 
+    numreads, nummapped, numunmapped, mitomapped, totalmapped,
+    overallmaprate, concordmaprate, mitorate, rrna_rate, totalassignedgene, bamfile)
+     SELECT * ", wins)
+
+r <- dbGetQuery(con, qry)
+if (r>0) {
+  message("New exp_rnaseq entries to be added: ", r)
+  r <- dbGetQuery(con, insqry)
+} else {
+  message("No new exp_rnaseq entries to be added.")
+}
+
+
+r <- dbGetQuery(con, "drop table exp_r_tmp")
+
+```
+###TODO : populate datasets public flag and exp_rnaseq.flags
+```{r}
+
+```
+
+
+
+
+

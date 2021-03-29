@@ -97,13 +97,14 @@ colnames(sd) <- tolower(colnames(sd))
 rownames(sd) <- NULL
 ## remove duplicate BrNum entries, keeping only the last one in each group
 sdf <- sd[!duplicated(sd$brnum, fromLast=T),]
+sdf$brint <- as.integer(gsub("^[^[:digit:]]+",'',sdf$brnum))
+
 ```
 
 Shuffle BrNums and establish dx_id
 ```{r}
 set.seed(42)
 sdf <- sdf[sample(nrow(sdf)),]
-sdf$brint <- as.integer(gsub("^[^[:digit:]]+",'',sdf$brnum))
 ```
 
 ```{r}
@@ -158,8 +159,8 @@ cat("Subjects loaded: ",r$count,"\n")
 ## -- update datasets table
 dsfreq <- as.data.frame(table(g_cd$Dataset, dnn=c("name")))
 colnames(dsfreq) <- tolower(colnames(dsfreq))
-dbGetQuery(con, "drop table if exists dsets_tmp")
-dbWriteTable(con, name="dsets_tmp", value=dsfreq, append=FALSE,
+r <- dbGetQuery(con, "drop table if exists dsets_tmp")
+rw <- dbWriteTable(con, name="dsets_tmp", value=dsfreq, append=FALSE,
              row.names=FALSE, temporary=TRUE)
 qry <- "INSERT into datasets (name)
   SELECT t.name from dsets_tmp t where 

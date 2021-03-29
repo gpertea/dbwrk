@@ -126,13 +126,13 @@ if (nrow(brmiss)>0) {
 }
 ```
 ```{r}
-qry <- "SELECT 'P'||trim(to_char(s.id, '00000')) as p_id, brnum, brint, dx, sex, race, age 
- FROM subjects s, dx d where d.id=s.dx_id";
+qry <- "SELECT 'P'||trim(to_char(s.id, '00000')) as p_id, brnum, brint, dx, sex, race, age, pmi, mod, dropped 
+ FROM subjects s, dx d where d.id=s.dx_id ORDER BY 1";
 subj <- dbGetQuery(con, qry)
 write.table(subj, file="subjects_data.tab", row.names = F, sep = "\t", quote=F)
 
-qry <- "SELECT s.name, 'P'||trim(to_char(p.id, '00000')) as p_id, brnum, dx, sex, race, age 
- FROM subjects p, dx d, samples s WHERE s.subj_id=p.id AND d.id=p.dx_id"
+qry <- "SELECT s.name, 'P'||trim(to_char(p.id, '00000')) as p_id, brnum, brint, dx, sex, race, age, pmi 
+ FROM subjects p, dx d, samples s WHERE s.subj_id=p.id AND d.id=p.dx_id ORDER BY 1"
 samp <- dbGetQuery(con, qry)
 write.table(samp, file="samples_phenodata.tab", row.names = F, sep = "\t", quote=F)
 

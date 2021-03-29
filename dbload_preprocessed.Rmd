@@ -1,0 +1,119 @@
+---
+title: "dbload_preprocessed"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r cars}
+library(dplyr)
+library(SummarizedExperiment)
+library(readxl) #to load Excel files
+```
+
+
+```{r}
+#objs <- load("dlpfc_polyA_brainseq_phase1_hg38_rseGene_merged_n732.rda")
+objs <- load("data/all_rse_gene/updated_rse_gene_DLPFC_polyA_BrainSeq_Phase1_LIBD_n959.Rdata")
+grse <- rse_gene
+gcd <- as.data.frame(colData(grse))
+grd <- as.data.frame(rowData(grse))
+ga <- as.data.frame(assay(grse))
+```
+
+```{r}
+bspxl <-  as.data.frame(read_excel("All-PhaseI-II-III-IV-V-samples_03_14_2019.xlsx"))
+colnames(bspxl) <- tolower(colnames(bspxl))
+colnames(bspxl)[1] <- "brint"
+colnames(bspxl) <- gsub("mpfc_phaseiv-v_", "mpfc_phase45_", colnames(bspxl))
+colnames(bspxl) <- gsub("_phasei_", "_phase1_", colnames(bspxl))
+colnames(bspxl) <- gsub("_phaseii_", "_phase2_", colnames(bspxl))
+colnames(bspxl) <- gsub("_phaseiii_", "_phase3_", colnames(bspxl))
+
+bspxl$brint=as.integer(bspxl$brnum)
+bspAll <- subset(bspxl, !is.na(dlpfc_phase1_rnum), select=c("brint", "dlpfc_phase1_rnum", "dlpfc_phase1_protocol", "dlpfc_phase1_rin"))
+colnames(bspAll)=c("brint", "rnum", "protocol", "rin")
+bspAll$region="DLPFC"
+bspAll$dataset="DLPFC_Phase1"
+
+bspsel <- subset(bspxl, !is.na(dlpfc_phase2_rnum), select=c("brint", "dlpfc_phase2_rnum", 
+                                                          "dlpfc_phase2_protocol", "dlpfc_phase2_rin"))
+colnames(bspsel)=c("brint", "rnum", "protocol", "rin")
+bspsel$region="DLPFC"
+bspsel$dataset="DLPFC_Phase2"
+bspAll <- rbind(bspAll, bspsel)
+
+bspsel <- subset(bspxl, !is.na(hippo_phase2_rnum), select=c("brint", "hippo_phase2_rnum", 
+                                                            "hippo_phase2_protocol", "hippo_phase2_rin"))
+colnames(bspsel)=c("brint", "rnum", "protocol", "rin")
+bspsel$region="HIPPO"
+bspsel$dataset="HIPPO_Phase2"
+bspAll <- rbind(bspAll, bspsel)
+
+bspsel <- subset(bspxl, !is.na(caudate_phase3_rnum), select=c("brint", "caudate_phase3_rnum", 
+                                                              "caudate_phase3_protocol", "caudate_phase3_rin"))
+colnames(bspsel)=c("brint", "rnum", "protocol", "rin")
+bspsel$region="Caudate"
+bspsel$dataset="Caudate_Phase3"
+bspAll <- rbind(bspAll, bspsel)
+
+bspsel <- subset(bspxl, !is.na(mpfc_phase45_rnum), select=c("brint", "mpfc_phase45_rnum", "mpfc_phase45_protocol", "mpfc_phase45_rin"))
+colnames(bspsel)=c("brint", "rnum", "protocol", "rin")
+bspsel$region="mPFC"
+bspsel$dataset="mPFC_Phase45"
+bspAll <- rbind(bspAll, bspsel)
+bspAll$rnum <- paste0("R",bspAll$rnum)
+write.table(bspAll, file="All-PhaseI-II-III-IV-V-samples_03_14_2019.tab", quote = FALSE, row.names=FALSE, sep="\t")
+
+```
+
+
+```{r}
+rb <- read.csv("data/2017_RNum_BrNum.csv")
+rb$brint <- as.integer(gsub("Br","", rb$BrNum))
+rm <- read.csv("data/all_rse_gene/updated_read_and_alignment_metrics_DLPFC_polyA_BrainSeq_Phase1_LIBD.csv")
+bsp1dta <- gcd[c("SAMPLE_ID", "trimmed", "numReads", "numMapped", "numUnmapped", "totalMapped", "overallMapRate", "concordMapRate", "mitoMapped", "mitoRate", "rRNA_rate", "totalAssignedGene","bamFile")]
+```
+
+merge colData rows in bsp1dta by RNum in the loaded rse_gene object
+```{r}
+bsp1dta$rnum <- gsub("_[^_]\\w+$", "", bsp1dta$SAMPLE_ID, perl = TRUE)
+xdta <- bsp1dta %>% group_by(rnum) %>% summarize ( SAMPLE_ID = paste(SAMPLE_ID, collapse=";"), trimmed=(sum(trimmed)>0), 
+                        numReads=sum(numReads), numMapped=sum(numMapped), numUnmapped=sum(numUnmapped), 
+                        totalMapped=sum(totalMapped), overallMapRate=mean(overallMapRate), concordMapRate=mean(concordMapRate), mitoMapped=sum(mitoMapped), mitoRate=mean(mitoRate), rRNA_rate=mean(rRNA_rate), totalAssignedGene=mean(totalAssignedGene),bamFile=paste(bamFile, collapse=";") )
+
+```
+
+### Connect to database
+
+```{r}
+library('RPostgreSQL')
+
+dbp <- read.delim(".pgpass", sep=":", header=TRUE)
+pg_db <- "rse"
+pg_user <- subset(dbp, database=="rse")[[1,4]]
+pg_pass <- subset(dbp, database=="rse")[[1,5]]
+
+pg <- dbDriver("PostgreSQL")
+
+con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv")
+#get a dataframe with subj data
+dbsubj <- dbGetQuery(con, "select * from subjects")
+#get a dataframe with subj data to RNum mapping
+
+rnum2brnum <- dbGetQuery(con, "SELECT t.name as dataset, s.name as rnum, sample_id, brnum, brint, 'P'||trim(to_char(p.id, '00000')) as sample, dx, sex, race, age, pmi, dropped
+ FROM subjects p, dx d, samples s, exp_rnaseq x, datasets t WHERE s.subj_id=p.id AND x.s_id=s.id
+ AND d.id=p.dx_id AND t.id=x.dataset_id
+ ORDER BY 2")
+```
+
+
+```{r}
+##TODO fetch the RIN from the bspAll table for all the RNums in xdta that are not in `samples` table
+
+```
+
+

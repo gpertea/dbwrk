@@ -75,3 +75,11 @@ SELECT r.id, r.name, COUNT(r_id) as num
 	   RIGHT OUTER JOIN regions r ON s.r_id=r.id
 	   WHERE (race='CAUC' or race='AA') AND dataset_id in (2,3,4,5) AND dx in ('Control','Schizo')
 	   GROUP BY 1 ORDER BY 1
+
+--- extracting regex substring from a field in a query:
+SELECT t.name, s.name, x.sample_id, substring(sample_id from '[^_]+_[^_]+') as smp_id, 
+ 'P'||trim(to_char(p.id, '00000')) as p_id, brnum, brint, dx, sex, race, age, pmi 
+  FROM subjects p, dx d, samples s, exp_rnaseq x, datasets t WHERE s.subj_id=p.id 
+  AND d.id=p.dx_id AND s.id=x.s_id AND t.id=x.dataset_id
+  AND sample_id LIKE 'R%\_%\_%'
+  ORDER BY 1

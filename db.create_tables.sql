@@ -74,7 +74,7 @@ CREATE TABLE regions (
  alts varchar[],  -- alternate spellings for this region
  partof smallint --references id for subregions,e.g. dentate gyrus is part of hippocampus
 );
- 
+
 CREATE UNIQUE INDEX idx_regions_n ON regions (name);
 CREATE INDEX idx_r_alts ON regions USING GIN(alts);
 -- how to test for an alternative spelling/names:
@@ -110,14 +110,29 @@ CREATE TYPE RnaSeqProtocol AS
 
 CREATE TABLE exp_RNASeq (
      id serial PRIMARY KEY,
+     dataset_id smallint, -- experiment group / dataset / project
      s_id integer NOT NULL REFERENCES samples (id), -- tissue sample ID
      s_name varchar(42), --redundancy check, references samples (name)
-     sample_id varchar(240),  -- as in SAMPLE_ID column in RSE
-     flags bit(8), -- single reads, qc_fail, non-public, internal restricted,...
-     dataset_id smallint, -- experiment group / dataset / project
-     protocol RnaSeqProtocol,
-     pr_date date, -- processing date
+     sample_id varchar(240),  -- like SAMPLE_ID column in RSE, but truncated
+     trimmed boolean, qc_fail boolean,
+     dropped boolean, --set to TRUE (including if qc_fail)
+     single boolean, -- as opposed to paired     
      RIN numeric(3,1),
+     protocol RnaSeqProtocol,
+     restricted boolean,
+     numReads int,
+     numMapped int,
+     numUnmapped int,
+     totalMapped int,
+     overallMapRate real,
+     concordMapRate real,
+     mitoMapped int,
+     mitoRate real,
+     rRNA_rate real,
+     totalAssignedGene real,
+     bamFile text
+
+     pr_date date, -- processing date
      g_set_id int, -- feature_sets('g', id)
      g_data real[],
      t_set_id int, -- feature_sets('t', id)
@@ -126,17 +141,6 @@ CREATE TABLE exp_RNASeq (
      e_data real[],
      j_set_id int, -- feature_sets('j', id)
      j_data real[],
-     numReads int,
-     numMapped int,
-     numUnmapped int,
-     mitoMapped int,
-     totalMapped int,
-     overallMapRate real,
-     concordMapRate real,
-     mitoRate real,
-     rRNA_rate real,
-     totalAssignedGene real,
-     bamFile text
 );
 
 CREATE INDEX idx_expRNASeq_sid on exp_RNASeq (s_id);
