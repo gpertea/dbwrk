@@ -110,13 +110,13 @@ CREATE TYPE RnaSeqProtocol AS
 
 CREATE TABLE exp_RNASeq (
      id serial PRIMARY KEY,
-     dataset_id smallint, -- experiment group / dataset / project
+     dataset_id smallint NOT NULL REFERENCES datasets (id), -- experiment group / dataset / project
      s_id integer NOT NULL REFERENCES samples (id), -- tissue sample ID
-     s_name varchar(42), --redundancy check, references samples (name)
-     sample_id varchar(240),  -- like SAMPLE_ID column in RSE, but truncated
+     s_name varchar(42), --redundancy check, references samples name),  rnum
+     sample_id varchar(240),  -- like SAMPLE_ID column in RSE, but truncated to 1st flow cell
      trimmed boolean, qc_fail boolean,
      dropped boolean, --set to TRUE (including if qc_fail)
-     single boolean, -- as opposed to paired     
+     single boolean, -- not paired reads sample
      RIN numeric(3,1),
      protocol RnaSeqProtocol,
      restricted boolean,

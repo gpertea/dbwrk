@@ -20,7 +20,7 @@ library("dplyr")
 ```{r}
 ## WARNING: setup expTableReload to TRUE if you want to drop the exp_rnaseq table (!) 
 ## and load it from the given rse_gene object
-expTableReload = FALSE
+expTableReload = TRUE
 rseFile="data/RNAseq_Collection_postQC_n5536_11dataset_2021-01_geneRSE.Rdata"
 
 ```
@@ -273,14 +273,28 @@ if (expTableReload) {
   r <- dbGetQuery(con, 'DROP TABLE exp_rnaseq CASCADE')
   r <- dbGetQuery(con, "CREATE TABLE exp_rnaseq (
      id serial PRIMARY KEY,
+     dataset_id smallint NOT NULL REFERENCES datasets (id), -- experiment group / dataset / project
      s_id integer NOT NULL REFERENCES samples (id), -- tissue sample ID
-     s_name varchar(42), --redundancy check, references samples (name)
-     sample_id varchar(240),  -- as in SAMPLE_ID column in RSE
-     flags bit(8), -- single reads, qc_fail, non-public, internal restricted,...
-     dataset_id smallint, -- experiment group / dataset / project
-     protocol RnaSeqProtocol,
-     pr_date date, -- processing date
+     s_name varchar(42), --redundancy check, references samples name),  rnum
+     sample_id varchar(240),  -- like SAMPLE_ID column in RSE, but truncated to 1st flow cell
+     trimmed boolean, qc_fail boolean,
+     dropped boolean, --set to TRUE (including if qc_fail)
+     single boolean, -- not paired reads sample
      RIN numeric(3,1),
+     protocol RnaSeqProtocol,
+     restricted boolean,
+     numReads int,
+     numMapped int,
+     numUnmapped int,
+     totalMapped int,
+     overallMapRate real,
+     concordMapRate real,
+     mitoMapped int,
+     mitoRate real,
+     rRNA_rate real,
+     totalAssignedGene real,
+     bamFile text,
+     pr_date date, -- processing date
      g_set_id int, -- feature_sets('g', id)
      g_data real[],
      t_set_id int, -- feature_sets('t', id)
@@ -288,18 +302,7 @@ if (expTableReload) {
      e_set_id int, -- feature_sets('e', id)
      e_data real[],
      j_set_id int, -- feature_sets('j', id)
-     j_data real[],
-     numReads int,
-     numMapped int,
-     numUnmapped int,
-     mitoMapped int,
-     totalMapped int,
-     overallMapRate real,
-     concordMapRate real,
-     mitoRate real,
-     rRNA_rate real,
-     totalAssignedGene real,
-     bamFile text
+     j_data real[]
   )")
   r <- dbGetQuery(con, "CREATE INDEX idx_expRNASeq_sid on exp_RNASeq (s_id)")
   r <- dbGetQuery(con, "CREATE INDEX idx_expRNASeq_sname on exp_RNASeq (s_name)")

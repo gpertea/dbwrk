@@ -16,7 +16,8 @@ library(readxl) #to load Excel files
 
 
 ```{r}
-#objs <- load("dlpfc_polyA_brainseq_phase1_hg38_rseGene_merged_n732.rda")
+#objs <- load("data/dlpfc_polyA_brainseq_phase1_hg38_rseGene_merged_n732.rda")
+#cd <- as.data.frame(colData(rse_gene))
 objs <- load("data/all_rse_gene/updated_rse_gene_DLPFC_polyA_BrainSeq_Phase1_LIBD_n959.Rdata")
 grse <- rse_gene
 gcd <- as.data.frame(colData(grse))
@@ -66,25 +67,44 @@ bspsel$region="mPFC"
 bspsel$dataset="mPFC_Phase45"
 bspAll <- rbind(bspAll, bspsel)
 bspAll$rnum <- paste0("R",bspAll$rnum)
-write.table(bspAll, file="All-PhaseI-II-III-IV-V-samples_03_14_2019.tab", quote = FALSE, row.names=FALSE, sep="\t")
+#write.table(bspAll, file="All-PhaseI-II-III-IV-V-samples_03_14_2019.tab", quote = FALSE, row.names=FALSE, sep="\t")
 
 ```
 
 
 ```{r}
 rb <- read.csv("data/2017_RNum_BrNum.csv")
+colnames(rb) <- tolower(colnames(rb))
 rb$brint <- as.integer(gsub("Br","", rb$BrNum))
-rm <- read.csv("data/all_rse_gene/updated_read_and_alignment_metrics_DLPFC_polyA_BrainSeq_Phase1_LIBD.csv")
-bsp1dta <- gcd[c("SAMPLE_ID", "trimmed", "numReads", "numMapped", "numUnmapped", "totalMapped", "overallMapRate", "concordMapRate", "mitoMapped", "mitoRate", "rRNA_rate", "totalAssignedGene","bamFile")]
+
+#rm <- read.csv("data/all_rse_gene/updated_read_and_alignment_metrics_DLPFC_polyA_BrainSeq_Phase1_LIBD.csv")
+cdta <- gcd[c("SAMPLE_ID", "trimmed", "numReads", "numMapped", "numUnmapped", "totalMapped", "overallMapRate", "concordMapRate", "mitoMapped", "mitoRate", "rRNA_rate", "totalAssignedGene","bamFile")]
 ```
 
-merge colData rows in bsp1dta by RNum in the loaded rse_gene object
+merge colData rows in cdta by RNum
 ```{r}
-bsp1dta$rnum <- gsub("_[^_]\\w+$", "", bsp1dta$SAMPLE_ID, perl = TRUE)
-xdta <- bsp1dta %>% group_by(rnum) %>% summarize ( SAMPLE_ID = paste(SAMPLE_ID, collapse=";"), trimmed=(sum(trimmed)>0), 
-                        numReads=sum(numReads), numMapped=sum(numMapped), numUnmapped=sum(numUnmapped), 
-                        totalMapped=sum(totalMapped), overallMapRate=mean(overallMapRate), concordMapRate=mean(concordMapRate), mitoMapped=sum(mitoMapped), mitoRate=mean(mitoRate), rRNA_rate=mean(rRNA_rate), totalAssignedGene=mean(totalAssignedGene),bamFile=paste(bamFile, collapse=";") )
+cdta$rnum <- gsub("_[^_]\\w+$", "", cdta$SAMPLE_ID, perl = TRUE)
+xdta <- cdta %>% group_by(rnum) %>% summarize ( SAMPLE_ID = paste(SAMPLE_ID, collapse=";"), trimmed=(sum(trimmed)>0), 
+                        numReads_t=sum(numReads), numMapped_t=sum(numMapped), numUnmapped=sum(numUnmapped), 
+                        totalMapped=sum(totalMapped), overallMapRate=sum(overallMapRate*numReads)/sum(numReads),
+                        concordMapRate=sum(concordMapRate*numReads)/sum(numReads), mitoMapped=sum(mitoMapped),
+                        mitoRate=sum(mitoRate*numMapped)/sum(numMapped), rRNA_rate=sum(rRNA_rate*numMapped)/sum(numMapped),
+                        totalAssignedGene=sum(totalAssignedGene*numMapped)/sum(numMapped),
+                        bamFile=paste(bamFile, collapse=";") )
+colnames(xdta) <- gsub("_t$", "", colnames(xdta), perl=TRUE)
 
+truncSmpID <- function(x) {
+  mp <- regexpr(';',x, fixed=TRUE)
+  if (mp[[1]]>-1) x=substr(x,1,mp[[1]]-1)
+  mp <- gregexpr('_',x, fixed=TRUE)
+  if (length(mp[[1]])<2) return(x)
+  return(substr(x,1,mp[[1]][2]-1))
+}
+xdta$SAMPLE_ID <- sapply(xdta$SAMPLE_ID, truncSmpID)
+colnames(xdta) [colnames(xdta) == "SAMPLE_ID"] <- "sample_id"
+nd <- sum( duplicated(xdta$sample_id) )
+if (nd>0)
+  stop("Error: duplicates found in xdta$sample_id after truncation")
 ```
 
 ### Connect to database
@@ -104,7 +124,7 @@ con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv
 dbsubj <- dbGetQuery(con, "select * from subjects")
 #get a dataframe with subj data to RNum mapping
 
-rnum2brnum <- dbGetQuery(con, "SELECT t.name as dataset, s.name as rnum, sample_id, brnum, brint, 'P'||trim(to_char(p.id, '00000')) as sample, dx, sex, race, age, pmi, dropped
+rnum2brnum <- dbGetQuery(con, "SELECT t.name as dataset, s.name as rnum, sample_id, brnum, brint, 'P'||trim(to_char(p.id, '00000')) as sample, dx, sex, race, age, pmi
  FROM subjects p, dx d, samples s, exp_rnaseq x, datasets t WHERE s.subj_id=p.id AND x.s_id=s.id
  AND d.id=p.dx_id AND t.id=x.dataset_id
  ORDER BY 2")
@@ -114,6 +134,17 @@ rnum2brnum <- dbGetQuery(con, "SELECT t.name as dataset, s.name as rnum, sample_
 ```{r}
 ##TODO fetch the RIN from the bspAll table for all the RNums in xdta that are not in `samples` table
 
+missbr <- nrow(anti_join(rb, dbsubj, by="brint"))
+if (missbr>0) {
+  stop("BrNum entries are missing from database, check anti_join(rb, dbsubj, by='brint')!")
+}
+msid <- anti_join(xdta, rnum2brnum, by="sample_id")
+if (nrow(msid)>0) {
+  message("RNums missing from database: ",nrow(msid))
+  msid$brnum <- rb$brnum[match(msid$rnum, rb$rnum)]
+  rb$region <- gsub("^([^_]+)_\\w+", "\\1", rb$dataset)
+  table(rb$region)
+}
 ```
 
 
