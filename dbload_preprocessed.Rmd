@@ -19,11 +19,44 @@ library(readxl) #to load Excel files
 #objs <- load("data/dlpfc_polyA_brainseq_phase1_hg38_rseGene_merged_n732.rda")
 #cd <- as.data.frame(colData(rse_gene))
 objs <- load("data/all_rse_gene/updated_rse_gene_DLPFC_polyA_BrainSeq_Phase1_LIBD_n959.Rdata")
+#must provide the name of the dataset!
+lDataset <- "BrainSeq_Phase1"
+
 grse <- rse_gene
 gcd <- as.data.frame(colData(grse))
 grd <- as.data.frame(rowData(grse))
 ga <- as.data.frame(assay(grse))
 ```
+
+
+```{r}
+library('RPostgreSQL')
+
+dbp <- read.delim(".pgpass", sep=":", header=TRUE)
+pg_db <- "rse"
+pg_user <- subset(dbp, database=="rse")[[1,4]]
+pg_pass <- subset(dbp, database=="rse")[[1,5]]
+
+pg <- dbDriver("PostgreSQL")
+
+con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv")
+#get a dataframe with subj data
+dbsubj <- dbGetQuery(con, "select * from subjects")
+dbregs <- dbGetQuery(con, "select * from regions")
+dbds <- dbGetQuery(con, "select * from datasets")
+lDataset_id <- dbds$id[dbds$name==lDataset]
+if (length(lDataset_id) ==0) {
+  stop(" Could not get ID for target dataset ",lDataset)
+}
+#get a dataframe with subj data to RNum mapping
+dbsmp <- dbGetQuery(con, "select * from samples")
+
+rnum2brnum <- dbGetQuery(con, "SELECT t.name as dataset, s.name as rnum, sample_id, brnum, brint, 'P'||trim(to_char(p.id, '00000')) as sample, dx, sex, race, age, pmi
+ FROM subjects p, dx d, samples s, exp_rnaseq x, datasets t WHERE s.subj_id=p.id AND x.s_id=s.id
+ AND d.id=p.dx_id AND t.id=x.dataset_id
+ ORDER BY 2")
+```
+
 
 ```{r}
 bspxl <-  as.data.frame(read_excel("All-PhaseI-II-III-IV-V-samples_03_14_2019.xlsx"))
@@ -33,56 +66,130 @@ colnames(bspxl) <- gsub("mpfc_phaseiv-v_", "mpfc_phase45_", colnames(bspxl))
 colnames(bspxl) <- gsub("_phasei_", "_phase1_", colnames(bspxl))
 colnames(bspxl) <- gsub("_phaseii_", "_phase2_", colnames(bspxl))
 colnames(bspxl) <- gsub("_phaseiii_", "_phase3_", colnames(bspxl))
-
 bspxl$brint=as.integer(bspxl$brnum)
-bspAll <- subset(bspxl, !is.na(dlpfc_phase1_rnum), select=c("brint", "dlpfc_phase1_rnum", "dlpfc_phase1_protocol", "dlpfc_phase1_rin"))
-colnames(bspAll)=c("brint", "rnum", "protocol", "rin")
-bspAll$region="DLPFC"
-bspAll$dataset="DLPFC_Phase1"
+bspd19 <- subset(bspxl, !is.na(dlpfc_phase1_rnum), select=c("brint", "dlpfc_phase1_rnum", "dlpfc_phase1_protocol", "dlpfc_phase1_rin"))
+colnames(bspd19)=c("brint", "rnum", "protocol", "rin")
+bspd19$region="DLPFC"
+bspd19$dataset="DLPFC_Phase1"
 
 bspsel <- subset(bspxl, !is.na(dlpfc_phase2_rnum), select=c("brint", "dlpfc_phase2_rnum", 
                                                           "dlpfc_phase2_protocol", "dlpfc_phase2_rin"))
 colnames(bspsel)=c("brint", "rnum", "protocol", "rin")
 bspsel$region="DLPFC"
 bspsel$dataset="DLPFC_Phase2"
-bspAll <- rbind(bspAll, bspsel)
+bspd19 <- rbind(bspd19, bspsel)
 
 bspsel <- subset(bspxl, !is.na(hippo_phase2_rnum), select=c("brint", "hippo_phase2_rnum", 
                                                             "hippo_phase2_protocol", "hippo_phase2_rin"))
 colnames(bspsel)=c("brint", "rnum", "protocol", "rin")
 bspsel$region="HIPPO"
 bspsel$dataset="HIPPO_Phase2"
-bspAll <- rbind(bspAll, bspsel)
+bspd19 <- rbind(bspd19, bspsel)
 
 bspsel <- subset(bspxl, !is.na(caudate_phase3_rnum), select=c("brint", "caudate_phase3_rnum", 
                                                               "caudate_phase3_protocol", "caudate_phase3_rin"))
 colnames(bspsel)=c("brint", "rnum", "protocol", "rin")
 bspsel$region="Caudate"
 bspsel$dataset="Caudate_Phase3"
-bspAll <- rbind(bspAll, bspsel)
+bspd19 <- rbind(bspd19, bspsel)
 
 bspsel <- subset(bspxl, !is.na(mpfc_phase45_rnum), select=c("brint", "mpfc_phase45_rnum", "mpfc_phase45_protocol", "mpfc_phase45_rin"))
 colnames(bspsel)=c("brint", "rnum", "protocol", "rin")
 bspsel$region="mPFC"
 bspsel$dataset="mPFC_Phase45"
-bspAll <- rbind(bspAll, bspsel)
-bspAll$rnum <- paste0("R",bspAll$rnum)
-#write.table(bspAll, file="All-PhaseI-II-III-IV-V-samples_03_14_2019.tab", quote = FALSE, row.names=FALSE, sep="\t")
-
+bspd19 <- rbind(bspd19, bspsel)
+bspd19$rnum <- paste0("R",bspd19$rnum)
+bspd19$brnum <- paste0("Br", bspd19$brint)
+bspd19$protocol <- gsub(" \\([^)]+\\)", "", bspd19$protocol)
+dmap <- list(c("DLPFC_Phase1", "BrainSeq_Phase1"), c("DLPFC_Phase2", "BrainSeq_Phase2_DLPFC"), 
+             c("HIPPO_Phase2","BrainSeq_Phase2_HIPPO"), c("Caudate_Phase3", "BrainSeq_Phase3_Caudate"), 
+             c("mPFC_Phase45", "BrainSeq_Phase4and5"))
+for (d in dmap) {
+  bspd19$dataset[bspd19$dataset == d[1]] <- gsub(d[1], d[2], bspd19$dataset[bspd19$dataset == d[1]])
+}
+##TODO: update exp_rnaseq.protocol
+#    where rnum=exp_rnaseq.s_name and dataset=datasets.name and exp_rnaseq.dataset_id=datasets.id
+#write.table(bspd19, file="All-PhaseI-II-III-IV-V-samples_03_14_2019.tab", quote = FALSE, row.names=FALSE, sep="\t")
 ```
 
 
 ```{r}
 rb <- read.csv("data/2017_RNum_BrNum.csv")
 colnames(rb) <- tolower(colnames(rb))
-rb$brint <- as.integer(gsub("Br","", rb$BrNum))
+rb$brint <- as.integer(gsub("Br","", rb$brnum))
+dsmap <- list(c("DLPFC_phase1_polyA", "BrainSeq_Phase1"), c("DLPFC_phase2_ribo", "BrainSeq_Phase2_DLPFC"),
+              c("HIPPO_phase2_ribo","BrainSeq_Phase2_HIPPO"), c("HIPPO_drop_ribo","BrainSeq_Phase2_HIPPO"),
+              c("Caudate_phase3_ribo", "BrainSeq_Phase3_Caudate"),c("DG_Ribo", "Astellas_DG"))
+for (d in dsmap) {
+  rb$dataset[rb$dataset == d[1]] <- gsub(d[1], d[2], rb$dataset[rb$dataset == d[1]])
+}
+rb$region <- gsub(".+_([^_]+)$","\\1", rb$dataset, perl = TRUE)
+rb$region[rb$region=="Phase1"]="DLPFC"
+# try to merge this with bspd19 by rnum
+rbspd <- full_join(rb, bspd19)
 
-#rm <- read.csv("data/all_rse_gene/updated_read_and_alignment_metrics_DLPFC_polyA_BrainSeq_Phase1_LIBD.csv")
-cdta <- gcd[c("SAMPLE_ID", "trimmed", "numReads", "numMapped", "numUnmapped", "totalMapped", "overallMapRate", "concordMapRate", "mitoMapped", "mitoRate", "rRNA_rate", "totalAssignedGene","bamFile")]
+## check if any RNums are missing from the database (but are found in rbspd)
+#bsp1rb <- rbspd[rbspd$dataset=="BrainSeq_Phase1",]
+missrn <- anti_join(rbspd, dbsmp, by=c("rnum"="name"))
+if (nrow(missrn)>0) {
+  message("Warning: ", nrow(missrn), " RNums missing in db!")
+  ## check if all regions are recognized and get their id:
+  rdf <- data.frame("id"=as.numeric(0), "name"=unique(missrn$region))
+  r <- dbGetQuery(con, "drop table if exists reg_tmp")
+  rt <- dbWriteTable(con, name="reg_tmp", value=rdf, 
+             append=FALSE, row.names=FALSE, temporary=T)
+  uqry <- "UPDATE reg_tmp t SET id=r.id FROM regions r 
+         WHERE lower(t.name) = lower(r.name) OR 
+         lower(t.name)=ANY(alts) OR r.fullname ILIKE t.name || '%'"
+  r <- dbGetQuery(con, uqry)
+  dbr <- dbGetQuery(con, "select name from reg_tmp where id=0")
+  if (nrow(dbr)>0) 
+      stop("The <regions> table needs update, regions could not be identified: ", dbr)
+  regs <- dbGetQuery(con, "select id, name from reg_tmp")
+  dbGetQuery(con, "drop table reg_tmp")
+  ## adding region id to samples:
+  missrn$r_id <- regs$id[ match(missrn$region, regs$name)]
+  ## adding dataset_id from matching entries in ds:
+  #smp$dataset_id <- ds$id[ match(smp$dataset, ds$name) ]
+  ## adding subj_id
+  missrn$subj_id <- dbsubj$id[ match(missrn$brint, dbsubj$brint) ]
+  ##------------ load missing samples through a temporary table ---
+  colnames(missrn) [colnames(missrn) == "rnum"] <- "name"
+  ## 
+  r <- dbGetQuery(con, "drop table if exists samples_tmp")
+  rt <- dbWriteTable(con, name="samples_tmp", value=missrn[c("name", "subj_id", "r_id")], 
+             append=FALSE, row.names=FALSE, temporary=T)
+  r <- dbGetQuery(con, "CREATE INDEX idx_stmp_n ON samples_tmp (name)")
+  qry <- "SELECT DISTINCT t.name, t.subj_id, t.r_id FROM samples_tmp t where 
+    NOT EXISTS( SELECT * from samples s where s.name = t.name )"
+  r <- dbGetQuery(con, qry)
+  insqry <- "INSERT into samples (name, subj_id, r_id)
+    SELECT DISTINCT t.name, t.subj_id, t.r_id from samples_tmp t where 
+      NOT EXISTS( SELECT * from samples s where s.name = t.name )"
+  if (nrow(r)>0) {
+     message("Samples will be added: ", nrow(r))
+     r <- dbGetQuery(con, insqry)
+  } else {
+     message("No new samples to be added.")
+ }
+ r <- dbGetQuery(con, "drop table samples_tmp")
+ 
+} #missing samples added to samples table
+  
+  
+# re there any rnums in bspd19 missing from rb?
+#only_in_bspd19 <- anti_join(bspd19, rb, by="rnum")
+#if (nrow(only_in_bspd19)>0) {
+#  message("Add ",nrow(only_in_bspd19)," missing rnum entries to rb from bspd19")
+#  # use bind_rows(df1, df2) )
+#}
+
+
 ```
 
 merge colData rows in cdta by RNum
 ```{r}
+cdta <- gcd[c("SAMPLE_ID", "trimmed", "numReads", "numMapped", "numUnmapped", "totalMapped", "overallMapRate", "concordMapRate", "mitoMapped", "mitoRate", "rRNA_rate", "totalAssignedGene","bamFile")]
 cdta$rnum <- gsub("_[^_]\\w+$", "", cdta$SAMPLE_ID, perl = TRUE)
 xdta <- cdta %>% group_by(rnum) %>% summarize ( SAMPLE_ID = paste(SAMPLE_ID, collapse=";"), trimmed=(sum(trimmed)>0), 
                         numReads_t=sum(numReads), numMapped_t=sum(numMapped), numUnmapped=sum(numUnmapped), 
@@ -110,41 +217,81 @@ if (nd>0)
 ### Connect to database
 
 ```{r}
-library('RPostgreSQL')
 
-dbp <- read.delim(".pgpass", sep=":", header=TRUE)
-pg_db <- "rse"
-pg_user <- subset(dbp, database=="rse")[[1,4]]
-pg_pass <- subset(dbp, database=="rse")[[1,5]]
-
-pg <- dbDriver("PostgreSQL")
-
-con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv")
-#get a dataframe with subj data
-dbsubj <- dbGetQuery(con, "select * from subjects")
-#get a dataframe with subj data to RNum mapping
+dbsmp <- dbGetQuery(con, "select * from samples")
 
 rnum2brnum <- dbGetQuery(con, "SELECT t.name as dataset, s.name as rnum, sample_id, brnum, brint, 'P'||trim(to_char(p.id, '00000')) as sample, dx, sex, race, age, pmi
  FROM subjects p, dx d, samples s, exp_rnaseq x, datasets t WHERE s.subj_id=p.id AND x.s_id=s.id
  AND d.id=p.dx_id AND t.id=x.dataset_id
  ORDER BY 2")
+
 ```
 
 
 ```{r}
-##TODO fetch the RIN from the bspAll table for all the RNums in xdta that are not in `samples` table
-
-missbr <- nrow(anti_join(rb, dbsubj, by="brint"))
+## check if any BrNums are missing from the database (but are found in rb)
+#missbr <- nrow(anti_join(rb, dbsubj, by="brint"))
+missbr <- nrow(anti_join(rbspd, dbsubj, by="brint"))
 if (missbr>0) {
-  stop("BrNum entries are missing from database, check anti_join(rb, dbsubj, by='brint')!")
+  stop("BrNum entries are missing from database, check anti_join((rbspd, dbsubj, by='brint')!")
 }
+##check if any RNum exp metadata are missing in the database (but found in xdta)
 msid <- anti_join(xdta, rnum2brnum, by="sample_id")
 if (nrow(msid)>0) {
-  message("RNums missing from database: ",nrow(msid))
-  msid$brnum <- rb$brnum[match(msid$rnum, rb$rnum)]
-  rb$region <- gsub("^([^_]+)_\\w+", "\\1", rb$dataset)
-  table(rb$region)
+  message("RNums that could be added to exp_rnaseq: ",nrow(msid))
+  msid$brnum <- rbspd$brnum[match(msid$rnum, rbspd$rnum)]
+  msid$rin <- rbspd$rin[match(msid$rnum, rbspd$rnum)]
+  msid$dataset_id <- lDataset_id
+  colnames(msid) [colnames(msid) == "rnum"] <- "s_name"
+  colnames(msid) <- tolower(colnames(msid))
+  # create a join s_id column from db samples.id corresponding to rnum
+  msid$s_id <- dbsmp$id[ match(msid$s_name, dbsmp$name) ]
+
+  rt <- dbGetQuery(con, "drop table if exists exp_r_tmp")
+
+  qry <- "CREATE TABLE exp_r_tmp ( s_id int, s_name varchar(42), sample_id varchar(240),  
+   dataset_id smallint, rin numeric(3,1), numreads int, nummapped int, numunmapped int, mitomapped int, 
+   totalmapped int, overallmaprate real,  concordmaprate real, mitorate real, rrna_rate real, 
+   totalassignedgene real, bamfile text )"
+
+  r <- dbGetQuery(con, qry)
+
+  rw <- dbWriteTable(con, name="exp_r_tmp", value=msid[c("s_id", "s_name", "sample_id", "dataset_id",
+   "rin", "numreads", "nummapped", "numunmapped", "mitomapped", "totalmapped",
+    "overallmaprate", "concordmaprate", "mitorate", "rrna_rate", "totalassignedgene",
+    "bamfile")], append=TRUE, row.names=FALSE)
+
+  rt <- dbGetQuery(con, "CREATE INDEX idx_rnaseqtmp_sid ON exp_r_tmp (sample_id)")
+
+  wins <- "FROM exp_r_tmp t WHERE NOT EXISTS( SELECT * from exp_rnaseq r where r.sample_id = t.sample_id)"
+
+  qry <- paste0("SELECT count(*) ",wins)
+  insqry <- paste0("INSERT into exp_rnaseq (s_id, s_name, sample_id, dataset_id, rin, 
+    numreads, nummapped, numunmapped, mitomapped, totalmapped,
+    overallmaprate, concordmaprate, mitorate, rrna_rate, totalassignedgene, bamfile)
+     SELECT * ", wins)
+
+  r <- dbGetQuery(con, qry)
+  if (r>0) {
+     message("New exp_rnaseq entries will be added: ", r)
+     r <- dbGetQuery(con, insqry)
+  } else {
+     message("No new exp_rnaseq entries to be added.")
+  }
+
+  r <- dbGetQuery(con, "drop table exp_r_tmp")
+  
+  ### check if we're missing any brnums
+  #miss_brnums <- sum(is.na(msid$brnum))
+  #if (miss_brnums>0) {
+  #  message("Could not fill BrNum for ", miss_brnums, " entries in msid dataframe!")
+  #}
+
 }
+```
+Finally, update exp_rnaseq.protocol from rbspd
+```{r}
+
 ```
 
 

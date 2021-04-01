@@ -117,6 +117,7 @@ CREATE TABLE exp_RNASeq (
      trimmed boolean, qc_fail boolean,
      dropped boolean, --set to TRUE (including if qc_fail)
      single boolean, -- not paired reads sample
+     submitted boolean, -- to SRA/GEO
      RIN numeric(3,1),
      protocol RnaSeqProtocol,
      restricted boolean,
@@ -130,9 +131,9 @@ CREATE TABLE exp_RNASeq (
      mitoRate real,
      rRNA_rate real,
      totalAssignedGene real,
-     bamFile text
+     bamFile text,
 
-     pr_date date, -- processing date
+     pr_date date, -- processing date?
      g_set_id int, -- feature_sets('g', id)
      g_data real[],
      t_set_id int, -- feature_sets('t', id)
@@ -140,7 +141,7 @@ CREATE TABLE exp_RNASeq (
      e_set_id int, -- feature_sets('e', id)
      e_data real[],
      j_set_id int, -- feature_sets('j', id)
-     j_data real[],
+     j_data real[]
 );
 
 CREATE INDEX idx_expRNASeq_sid on exp_RNASeq (s_id);
