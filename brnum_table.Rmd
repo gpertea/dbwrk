@@ -1,0 +1,68 @@
+---
+title: "brnum_table"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Providing a simple way to load an Excel table with BrNums and adding a column with the corresponding P# IDs from the database
+* optionally add the missing IDs to the table
+* this could (should?) be packaged as an RScript taking an input file as parameter and some options to guide the data processing, saving a tab delimited (tsv) text file to be then loaded in Excel
+
+```{r}
+library(dplyr)
+library(readxl)
+
+#-- connect to the database and load the subject info
+library('RPostgreSQL')
+dbp <- read.delim(".pgpass", sep=":", header=TRUE)
+pg_db <- "rse"
+pg_user <- subset(dbp, database=="rse")[[1,4]]
+pg_pass <- subset(dbp, database=="rse")[[1,5]]
+pg <- dbDriver("PostgreSQL")
+con <- dbConnect(pg, dbname=pg_db, user=pg_user, password=pg_pass, host="gdebsrv")
+qry <- "SELECT 'P'||trim(to_char(s.id, '00000')) as p_id, brnum, brint, 
+    dx, sex, race, age, mod, pmi 
+    FROM subjects s, dx d where d.id=s.dx_id ORDER BY 1";
+subj <- dbGetQuery(con, qry)
+write.table(subj, file="subjects_data.tab", row.names = F, sep = "\t", quote=F)
+message("Loaded data for ",nrow(subj), " subjects")
+```
+Load the Excel file to add the subj_id column
+```{r}
+#fn <- "FeinbergSampleID_LBR_10.07.2020.xlsx"
+fn <- "BrNum_LIBDIntranet_031221.n2511.xlsx"
+bxl <- as.data.frame(read_excel(fn))
+
+#bxl$subj_id <- subj$p_id[ match(as.integer(gsub("Br","", bxl$`Br #`)), subj$brint) ]
+bxl$brint=as.integer(gsub("Br","", bxl$BrNum))
+bxl$subj_id <- subj$p_id[ match(bxl$brint, subj$brint)]
+
+```
+
+OPTIONAL: find the missing BrNums 
+```{r}
+xlm <- anti_join(subj, bxl, by="brint")
+colnames(xlm)=c("subj_id", "BrNum", "brint", "PrimaryDx", "Sex", "Race", "AgeDeath", "Manner Of Death", "PMI")
+bxladd <- rbind(bxl, xlm)
+```
+
+```{r}
+## -- check if bxladd looks good, push it back in bxl
+bxladd$brint <- NULL
+bxl <- bxladd
+```
+
+
+Write the Excel data to a tab delimited file and a csv to be loaded in Excel:
+```{r}
+
+fw="BrNum_LIBDIntranet_031221.n2511.subj_id"
+bxl$AgeDeath <- round(bxl$AgeDeath, digits = 1)
+write.table(bxl, file=paste0(fw,".tab"), row.names = F, sep = "\t", quote=F)
+write.csv(bxl, file=paste0(fw,".csv"), row.names = F )
+
+```
+
