@@ -107,9 +107,8 @@ dmap <- list(c("DLPFC_Phase1", "BrainSeq_Phase1"), c("DLPFC_Phase2", "BrainSeq_P
 for (d in dmap) {
   bspd19$dataset[bspd19$dataset == d[1]] <- gsub(d[1], d[2], bspd19$dataset[bspd19$dataset == d[1]])
 }
-##TODO: update exp_rnaseq.protocol
-#    where rnum=exp_rnaseq.s_name and dataset=datasets.name and exp_rnaseq.dataset_id=datasets.id
-#write.table(bspd19, file="All-PhaseI-II-III-IV-V-samples_03_14_2019.tab", quote = FALSE, row.names=FALSE, sep="\t")
+
+write.table(bspd19, file="All-PhaseI-II-III-IV-V-samples_03_14_2019.tab", quote = FALSE, row.names=FALSE, sep="\t")
 ```
 
 
@@ -214,8 +213,6 @@ if (nd>0)
   stop("Error: duplicates found in xdta$sample_id after truncation")
 ```
 
-### Connect to database
-
 ```{r}
 
 dbsmp <- dbGetQuery(con, "select * from samples")
@@ -291,6 +288,18 @@ if (nrow(msid)>0) {
 ```
 Finally, update exp_rnaseq.protocol from rbspd
 ```{r}
+##TODO: update exp_rnaseq.protocol
+#    where rnum=exp_rnaseq.s_name and dataset=datasets.name and exp_rnaseq.dataset_id=datasets.id
+#load rbspd in a temporary table
+rt <- dbGetQuery(con, "drop table if exists proto_tmp")
+r <- dbGetQuery(con, "CREATE TABLE proto_tmp (rnum varchar(42), dataset varchar(42), protocol rnaseqprotocol)")
+rw <- dbWriteTable(con, name="proto_tmp", value=rbspd[c("rnum", "dataset","protocol")], 
+                   append=TRUE, row.names=FALSE)
+rt <- dbGetQuery(con, "CREATE INDEX idx_prototmp ON proto_tmp (rnum)")
+rt <- dbGetQuery(con, "CREATE INDEX idxds_prototmp ON proto_tmp (dataset)")
+ru <- dbGetQuery(con, "UPDATE exp_rnaseq r set protocol=t.protocol from proto_tmp t, datasets d 
+ WHERE r.dataset_id=d.id AND d.name=t.dataset AND t.rnum=r.s_name")
+r <- dbGetQuery(con, "drop table proto_tmp")
 
 ```
 
