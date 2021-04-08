@@ -108,7 +108,7 @@ for (d in dmap) {
   bspd19$dataset[bspd19$dataset == d[1]] <- gsub(d[1], d[2], bspd19$dataset[bspd19$dataset == d[1]])
 }
 
-write.table(bspd19, file="All-PhaseI-II-III-IV-V-samples_03_14_2019.tab", quote = FALSE, row.names=FALSE, sep="\t")
+#write.table(bspd19, file="All-PhaseI-II-III-IV-V-samples_03_14_2019.tab", quote = FALSE, row.names=FALSE, sep="\t")
 ```
 
 

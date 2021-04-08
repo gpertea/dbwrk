@@ -117,6 +117,10 @@ CREATE TABLE exp_RNASeq (
      trimmed boolean, qc_fail boolean,
      dropped boolean, --set to TRUE (including if qc_fail)
      single boolean, -- not paired reads sample
+
+     readlen smallint,
+     fraglen smallint,
+          
      submitted boolean, -- to SRA/GEO
      RIN numeric(3,1),
      protocol RnaSeqProtocol,
