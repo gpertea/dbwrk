@@ -193,6 +193,9 @@ if (nd>0)
   stop("Error: duplicates found in sample_id after semicolon truncation")
 #smp$bamfile <- sapply(smp[,"bamFile"], paste, collapse=';')
 ## simplify bamfile lists so the directory path is only kept once
+#-- only the 1st bam file has the full path, any additional bam files 
+##  will be simply comma delimited filenames
+
 smp$bamfile <- sapply(smp$bamfile, function(x) {
   if (length(x)==1) return(x)
   mp <- regexpr('/[^\\/]+$',x, perl=TRUE)

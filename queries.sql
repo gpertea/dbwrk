@@ -83,3 +83,26 @@ SELECT t.name, s.name, x.sample_id, substring(sample_id from '[^_]+_[^_]+') as s
   AND d.id=p.dx_id AND s.id=x.s_id AND t.id=x.dataset_id
   AND sample_id LIKE 'R%\_%\_%'
   ORDER BY 1
+
+------ fix bamfile field in exp_rnaseq with multiple bam files to only include the directory once,
+-------- then add any additional bam files separated by comma 
+------------ get a column with array index (1-based) when unnesting:
+SELECT x.id, x.s_name, x.sample_id, a.s, a.ix INTO TEMP xupd_tmp 
+  FROM datasets d, exp_rnaseq x, unnest(string_to_array(bamfile, ';')) with ORDINALITY a(s, ix)
+  WHERE d.id = x.dataset_id AND array_length(string_to_array(bamfile, ';'),1)>1;
+-- update for ix > 1
+UPDATE xupd_tmp set s=substring(s, '[^/]+$') where ix>1;
+-- check if the re-aggregation looks OK:
+SELECT id, array_to_string(ARRAY_AGG(s ORDER BY ix),',') AS rebamfile
+  FROM xupd_tmp GROUP BY id;
+-- update exp_rnaseq accordingly
+WITH u as (SELECT id, array_to_string(ARRAY_AGG(s ORDER BY ix),',') as rebamfile
+       FROM xupd_tmp GROUP BY id)
+  UPDATE exp_rnaseq x set bamfile=rebamfile FROM u where u.id=x.id
+-- now double check we don't have any more entries like this
+SELECT x.id, x.s_name, x.sample_id, a.s, a.ix
+ FROM datasets d, exp_rnaseq x, unnest(string_to_array(bamfile, ';')) with ORDINALITY a(s, ix)
+ WHERE d.id = x.dataset_id AND array_length(string_to_array(bamfile, ';'),1)>1;
+--
+DROP TABLE xupd_tmp;
+

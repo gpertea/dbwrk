@@ -197,6 +197,20 @@ xdta <- cdta %>% group_by(rnum) %>% summarize ( SAMPLE_ID = paste(SAMPLE_ID, col
                         mitoRate=sum(mitoRate*numMapped)/sum(numMapped), rRNA_rate=sum(rRNA_rate*numMapped)/sum(numMapped),
                         totalAssignedGene=sum(totalAssignedGene*numMapped)/sum(numMapped),
                         bamFile=paste(bamFile, collapse=";") )
+#-- fix bamFile to have the dir only once for the first BAM file, 
+#--  and additional bam files will be simply comma delimited
+xdta$bamfile <- sapply(xdta$bamfile, function(x) {
+  if (length(x)==1) return(x)
+  mp <- regexpr('/[^\\/]+$',x, perl=TRUE)
+  if (mp[[1]]==-1) return(paste(x, collapse=','))
+  r <- sapply(regmatches(x,mp), substr, 2, nchar(x))
+  r[[1]] <- x[[1]]
+  return(paste(r, collapse=','))
+})
+
+
+
+
 colnames(xdta) <- gsub("_t$", "", colnames(xdta), perl=TRUE)
 
 truncSmpID <- function(x) {
