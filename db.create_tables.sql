@@ -15,33 +15,35 @@ CREATE TYPE subjSex AS
 DROP TABLE IF EXISTS dx;
 
 CREATE TABLE dx ( -- Diagnosis table
-   id serial PRIMARY KEY, 
+   id serial PRIMARY KEY,
    dx varchar(26) NOT NULL, --short name/abbreviation to display
-   name varchar(72) -- full name, no abbreviation
+   alts varchar[],  -- alternate spellings for this region
+   fullname varchar(84) -- full name, no abbreviation
 );
---CREATE INDEX idx_dx_alts ON dx USING GIN(alts);
-INSERT INTO dx (dx, name) VALUES
- ('Control', NULL),
- ('Schizo', 'Schizophrenia'),
- ('MDD', 'Major Depressive Disorder'),
- ('PTSD', 'Post traumatic stress disorder'),
- ('R/O PTSD', 'Rule Out PTSD'),
- ('Autism', NULL),
- ('ADHD', 'Attention deficit hyperactivity disorder'),
- ('Anxiety', NULL),
- ('AD', 'Alzheimer''s Disease'),
- ('preclinicalAD', 'preclinical Alzheimer''s Disease'),
- ('Bipolar', NULL),
- ('BpNOS', 'Bipolar Not Otherwise Specified'),
- ('Dementia', NULL),
- ('ED', 'Eating disorder'),
+CREATE UNIQUE INDEX idx_dx ON dx (dx)
+CREATE INDEX idx_dx_alts ON dx USING GIN(alts);
+INSERT INTO dx (dx, alts, fullname) VALUES
+ ('Control', {'CTRL'}, 'Control'),
+ ('SCZD', {'Schizo'}, 'Schizophrenia'),
+ ('MDD', {'Depression'}, 'Major Depressive Disorder'),
+ ('PTSD', NULL, 'Post traumatic stress disorder'),
+ ('R/O PTSD', NULL, 'Rule Out PTSD'),
+ ('ASD', {'Autism'}, 'Autism spectrum disorder'),
+ ('ADHD', NULL, 'Attention deficit/hyperactivity disorder'),
+ ('Anxiety', NULL, NULL),
+ ('AD', {'Alzheimer'},'Alzheimer''s Disease'),
+ ('preclinicalAD', {'preclinical AD','preclinical Alzheimer'},'preclinical Alzheimer''s Disease'),
+ ('BD', {'BpNOS','Bipolar'}, 'Bipolar Disorder'),
+ ('BpNOS', 'Bipolar Not Otherwise Specified'), 
+ ('Dementia', NULL, NULL),
+ ('ED', NULL, 'Eating disorder'),
  ('OCD', 'Obsessive compulsive disorder'),
- ('Alcohol', 'Alcohol dependence'),
- ('Substance', 'Substance dependence'),
- ('Tics', NULL),
- ('Williams', 'Williams'' syndrome'),
- ('Neuro', NULL),
- ('Medical', NULL);
+ ('AUD', {'Alcohol','Alcohol dependence'}, 'Alcohol Use Disorder'),
+ ('SUD', {'Substance', 'Substance dependence'}, 'Substance Use Disorder'),
+ ('Tics', NULL, NULL),
+ ('Williams', NULL, 'Williams'' syndrome'),
+ ('Neuro', NULL, NULL),
+ ('Medical', NULL, NULL);
 
 
 CREATE TABLE subjects (

@@ -16,11 +16,13 @@ library(readxl) #to load Excel files
 
 
 ```{r}
-#objs <- load("data/dlpfc_polyA_brainseq_phase1_hg38_rseGene_merged_n732.rda")
 #cd <- as.data.frame(colData(rse_gene))
-objs <- load("data/all_rse_gene/updated_rse_gene_DLPFC_polyA_BrainSeq_Phase1_LIBD_n959.Rdata")
+#objs <- load("data/all_rse_gene/updated_rse_gene_DLPFC_polyA_BrainSeq_Phase1_LIBD_n959.Rdata")
+#objs <- load("data/all_rse_gene/rse_gene_DLPFC_RiboZero_BrainSeq_Phase2_LIBD_n579.Rdata")
+#objs <- load("data/all_rse_gene/rse_gene_HIPPO_RiboZero_BrainSeq_Phase2_LIBD_n486.Rdata")
+objs <- load("data/all_rse_gene/rse_gene_Caudate_BrainSeq_Phase3_LIBD_n969.Rdata")
 #must provide the name of the dataset!
-lDataset <- "BrainSeq_Phase1"
+lDataset <- "BrainSeq_Phase3_Caudate"
 
 grse <- rse_gene
 gcd <- as.data.frame(colData(grse))
@@ -57,7 +59,7 @@ rnum2brnum <- dbGetQuery(con, "SELECT t.name as dataset, s.name as rnum, sample_
  ORDER BY 2")
 ```
 
-
+This can be skipped after it was done once
 ```{r}
 bspxl <-  as.data.frame(read_excel("All-PhaseI-II-III-IV-V-samples_03_14_2019.xlsx"))
 colnames(bspxl) <- tolower(colnames(bspxl))
@@ -111,7 +113,7 @@ for (d in dmap) {
 #write.table(bspd19, file="All-PhaseI-II-III-IV-V-samples_03_14_2019.tab", quote = FALSE, row.names=FALSE, sep="\t")
 ```
 
-
+This can be skipped after it was done once
 ```{r}
 rb <- read.csv("data/2017_RNum_BrNum.csv")
 colnames(rb) <- tolower(colnames(rb))
@@ -199,7 +201,7 @@ xdta <- cdta %>% group_by(rnum) %>% summarize ( SAMPLE_ID = paste(SAMPLE_ID, col
                         bamFile=paste(bamFile, collapse=";") )
 #-- fix bamFile to have the dir only once for the first BAM file, 
 #--  and additional bam files will be simply comma delimited
-xdta$bamfile <- sapply(xdta$bamfile, function(x) {
+xdta$bamFile <- sapply(xdta$bamFile, function(x) {
   if (length(x)==1) return(x)
   mp <- regexpr('/[^\\/]+$',x, perl=TRUE)
   if (mp[[1]]==-1) return(paste(x, collapse=','))
@@ -207,9 +209,6 @@ xdta$bamfile <- sapply(xdta$bamfile, function(x) {
   r[[1]] <- x[[1]]
   return(paste(r, collapse=','))
 })
-
-
-
 
 colnames(xdta) <- gsub("_t$", "", colnames(xdta), perl=TRUE)
 
@@ -312,7 +311,7 @@ rw <- dbWriteTable(con, name="proto_tmp", value=rbspd[c("rnum", "dataset","proto
 rt <- dbGetQuery(con, "CREATE INDEX idx_prototmp ON proto_tmp (rnum)")
 rt <- dbGetQuery(con, "CREATE INDEX idxds_prototmp ON proto_tmp (dataset)")
 ru <- dbGetQuery(con, "UPDATE exp_rnaseq r set protocol=t.protocol from proto_tmp t, datasets d 
- WHERE r.dataset_id=d.id AND d.name=t.dataset AND t.rnum=r.s_name")
+ WHERE r.dataset_id=d.id AND d.name=t.dataset AND t.rnum=r.s_name AND t.protocol is NOT NULL")
 r <- dbGetQuery(con, "drop table proto_tmp")
 
 ```
