@@ -106,3 +106,27 @@ SELECT x.id, x.s_name, x.sample_id, a.s, a.ix
 --
 DROP TABLE xupd_tmp;
 
+------- TODO: stored procedure/function to get a new subject.id
+----     based on the new_p_id table which stores the available
+--(before switching subjects.id from serial I got the max value 2517 like this:
+--    select max(id) FROM subjects
+-- I created a new_p_id table with the available index numbers:
+--select idx::int INTO new_p_id
+-- FROM generate_series(2518,99999) as s(idx)
+--create unique INDEX new_p_id_idx ON new_p_id(idx)
+-- TO SELECT a random row from this table:
+SELECT * FROM new_p_id OFFSET random()*(select count(*) from new_p_id) LIMIT 1
+
+--- the returned idx value should be then deleted from the new_p_id table!
+
+DO $$
+DECLARE
+   idnum integer; 
+BEGIN
+   select count(*)
+   into idnum
+   from new_p_id;
+   raise notice 'Max number of available p_ids: %', idnum;
+END; $$
+
+select idx from new_p_id OFFSET 96000 LIMIT 1

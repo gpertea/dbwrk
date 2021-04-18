@@ -47,7 +47,7 @@ INSERT INTO dx (dx, alts, fullname) VALUES
 
 
 CREATE TABLE subjects (
-    id serial PRIMARY KEY, -- internal unique subject identifier (int)
+    id integer PRIMARY KEY, -- internal unique subject identifier (int)
     brnum varchar(24), -- BrNum or other unique alphanumeric identifier
     brint integer, -- for BrNums only the integer (numeric) part
     age numeric(5,2) NOT NULL,
