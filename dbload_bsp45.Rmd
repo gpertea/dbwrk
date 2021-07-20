@@ -15,9 +15,18 @@ library(readxl) #to load Excel files
 ```
 
 
+
 ```{r}
-#cd <- as.data.frame(colData(rse_gene))
-#objs <- load("data/all_rse_gene/updated_rse_gene_DLPFC_polyA_BrainSeq_Phase1_LIBD_n959.Rdata")
+objspre <- load("data/all_rse_gene/updated_rse_gene_DLPFC_polyA_BrainSeq_Phase1_LIBD_n959.Rdata")
+g1pre <- rse_gene
+cd1pre <- as.data.frame(colData(rse_gene))
+objs <- load("data/all_rse_gene/dlpfc_polyA_brainseq_phase1_hg38_rseGene_merged_n732.rda")
+g1post <- rse_gene
+cd1post <- as.data.frame(colData(rse_gene))
+
+```
+
+```{r}
 #objs <- load("data/all_rse_gene/rse_gene_DLPFC_RiboZero_BrainSeq_Phase2_LIBD_n579.Rdata")
 #objs <- load("data/all_rse_gene/rse_gene_HIPPO_RiboZero_BrainSeq_Phase2_LIBD_n486.Rdata")
 #objs <- load("data/all_rse_gene/rse_gene_Caudate_BrainSeq_Phase3_LIBD_n969.Rdata")
